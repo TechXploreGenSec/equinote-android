@@ -53,6 +53,13 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.1.0-beta.2 changelog (your-banks SMS filter)
+
+- **SMS scan shows only your banks** — accounts now carry bank name, last-4
+  digits and sender IDs (e.g. HDFCBK, SBIINB). The scan hides every non-bank
+  message and auto-selects the matching account per spend. With no bank info
+  configured, everything still shows with a nudge to add it.
+
 ## v3.1.0-beta.1 changelog (daily spends beta)
 
 - **Daily expenses tab (Spends)** — record everyday outflows with a mandatory

@@ -8,7 +8,8 @@ import { ExpenseItem, ExpenseAccount, ExpenseCategory, ExpenseAccountKind, UserS
 import { formatCurrency } from '../utils/finance';
 import {
   isSmsSupported, ensureSmsPermission, readInboxSms,
-  filterDebitCandidates, suggestExpenseTitle, SpendCandidate,
+  filterDebitCandidates, filterByUserBanks,
+  suggestExpenseTitle, SpendCandidate,
 } from '../utils/smsImport';
 
 interface ExpensesViewProps {
@@ -93,6 +94,9 @@ export default function ExpensesView({
   const [accName, setAccName] = useState('');
   const [accKind, setAccKind] = useState<ExpenseAccountKind>('bank');
   const [accBalance, setAccBalance] = useState('');
+  const [accBankName, setAccBankName] = useState('');
+  const [accLast4, setAccLast4] = useState('');
+  const [accSenderIds, setAccSenderIds] = useState('');
 
   const [isSmsOpen, setIsSmsOpen] = useState(false);
   const [smsStatus, setSmsStatus] = useState<string | null>(null);
@@ -173,9 +177,13 @@ export default function ExpensesView({
       name: accName.trim(),
       kind: accKind,
       balance: accBalance ? Number(accBalance) : undefined,
+      bankName: accBankName.trim() || undefined,
+      last4: accLast4.trim() || undefined,
+      senderIds: accSenderIds.trim() || undefined,
       createdAt: new Date().toISOString(),
     });
     setAccName(''); setAccKind('bank'); setAccBalance('');
+    setAccBankName(''); setAccLast4(''); setAccSenderIds('');
     setIsAccountFormOpen(false);
   };
 
@@ -205,16 +213,27 @@ export default function ExpensesView({
         setSmsRows([]);
         return;
       }
-      setSmsRows(debits.map((d) => ({
+      const { mine, others, filtered } = filterByUserBanks(debits, accounts);
+      if (mine.length === 0) {
+        setSmsStatus(
+          `Scanned ${messages.length} SMS, found ${debits.length} spending${debits.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
+        );
+        setSmsRows([]);
+        return;
+      }
+      setSmsRows(mine.map(({ candidate: d, accountId }) => ({
         ...d,
         selected: true,
         title: suggestExpenseTitle(d),
         reason: '',
-        accountId: accounts[0]?.id || '',
+        accountId: accountId || accounts[0]?.id || '',
       })));
       setSmsStatus(
-        `Found ${debits.length} spending${debits.length > 1 ? 's' : ''} — add a reason for each, then import.` +
-        (skippedCredits > 0 ? ` (${skippedCredits} credits ignored.)` : '')
+        `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''}` +
+        (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
+        (skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : '') +
+        '. Add a reason for each, then import.' +
+        (!filtered ? ' Tip: add sender IDs in My accounts to filter only your banks.' : '')
       );
     } catch (err) {
       setSmsStatus(`SMS scan failed (${err instanceof Error ? err.message : 'unknown error'}).`);
@@ -356,6 +375,26 @@ export default function ExpensesView({
                 className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
               />
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text" value={accBankName} onChange={(e) => setAccBankName(e.target.value)}
+                placeholder="Bank name, e.g. HDFC Bank"
+                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+              <input
+                type="text" inputMode="numeric" maxLength={4} value={accLast4} onChange={(e) => setAccLast4(e.target.value.replace(/\D/g, ''))}
+                placeholder="Last 4 digits, e.g. 4821"
+                className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <input
+              type="text" value={accSenderIds} onChange={(e) => setAccSenderIds(e.target.value.toUpperCase())}
+              placeholder="SMS sender IDs, e.g. HDFCBK, SBIINB"
+              className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            />
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Bank name, last-4 and sender IDs power the SMS scan filter — only messages from your banks are shown.
+            </p>
             <button type="submit" className="w-full py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold">
               Save account
             </button>
@@ -378,6 +417,11 @@ export default function ExpensesView({
                       {ACCOUNT_KINDS[a.kind].label} · out this month {formatCurrency(spent, settings.currencySymbol)}
                       {typeof a.balance === 'number' ? ` · left ${formatCurrency(Math.max(0, a.balance - spent), settings.currencySymbol)}` : ''}
                     </div>
+                    {(a.bankName || a.last4 || a.senderIds) && (
+                      <div className="text-[10px] text-sky-400/90 truncate mt-0.5">
+                        {[a.bankName, a.last4 ? `··${a.last4}` : '', a.senderIds].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button

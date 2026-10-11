@@ -90,6 +90,12 @@ export interface ExpenseAccount {
   kind: ExpenseAccountKind;
   /** Optional balance; when set, the app shows spent + remaining. */
   balance?: number;
+  /** Bank identity for SMS filtering, e.g. "HDFC Bank". */
+  bankName?: string;
+  /** Last 4 digits of the account/card number, e.g. "4821". */
+  last4?: string;
+  /** Bank SMS sender ids, comma separated, e.g. "HDFCBK, SBIINB". */
+  senderIds?: string;
   createdAt: string;
 }
 

@@ -1,4 +1,5 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
+import { ExpenseAccount } from '../types';
 
 export interface SmsMessage {
   id: string;
@@ -150,4 +151,82 @@ export function suggestExpenseTitle(c: SpendCandidate): string {
   const sender = (c.sender || '').replace(/^[A-Z]{2}-/, '');
   if (sender && !/^\d+$/.test(sender)) return sender;
   return 'SMS spend';
+}
+
+const GENERIC_BANK_WORDS = new Set(['bank', 'of', 'the', 'and', 'a']);
+
+function splitSenderIds(raw?: string): string[] {
+  return (raw || '')
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter((s) => s.length >= 3);
+}
+
+function bankNameTokens(bankName?: string): string[] {
+  return (bankName || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length > 2 && !GENERIC_BANK_WORDS.has(t));
+}
+
+/** True when the user configured any bank filter on any account. */
+export function hasUserBankFilters(accounts: ExpenseAccount[]): boolean {
+  return accounts.some(
+    (a) =>
+      splitSenderIds(a.senderIds).length > 0 ||
+      (a.last4 || '').trim().length === 4 ||
+      bankNameTokens(a.bankName).length > 0
+  );
+}
+
+export interface BankMatch {
+  candidate: SpendCandidate;
+  /** Account auto-matched by sender id / last-4, if any. */
+  accountId?: string;
+}
+
+/**
+ * Keep only candidates from the user's own banks:
+ * sender-id hit, last-4 hit, or bank-name token in the sender id.
+ * Everything else is reported as filtered-out noise.
+ */
+export function filterByUserBanks(
+  candidates: SpendCandidate[],
+  accounts: ExpenseAccount[]
+): { mine: BankMatch[]; others: number; filtered: boolean } {
+  if (!hasUserBankFilters(accounts)) {
+    return { mine: candidates.map((candidate) => ({ candidate })), others: 0, filtered: false };
+  }
+  const mine: BankMatch[] = [];
+  let others = 0;
+  for (const candidate of candidates) {
+    const senderU = (candidate.sender || '').toUpperCase();
+    let accountId: string | undefined;
+    let matched = false;
+
+    for (const acc of accounts) {
+      const ids = splitSenderIds(acc.senderIds);
+      if (ids.some((id) => senderU.includes(id))) {
+        matched = true;
+        accountId = accountId || acc.id;
+      }
+      const last4 = (acc.last4 || '').trim();
+      if (!matched && last4.length === 4 && candidate.accountLast4 === last4) {
+        matched = true;
+        accountId = acc.id;
+      }
+      if (!matched) {
+        const tokens = bankNameTokens(acc.bankName);
+        if (tokens.some((t) => senderU.includes(t.toUpperCase()))) {
+          matched = true;
+          accountId = accountId || acc.id;
+        }
+      }
+      if (matched && accountId) break;
+    }
+
+    if (matched) mine.push({ candidate, accountId });
+    else others++;
+  }
+  return { mine, others, filtered: true };
 }
