@@ -249,7 +249,8 @@ export default function SettingsView({
         </div>
         <p className="text-[11px] text-slate-400 leading-relaxed">
           Get a free key at <span className="font-mono text-slate-300">console.groq.com</span> (free tier, no card).
-          Only merchant + amount + date fragments ever leave your phone — full SMS text never does.
+          SMS scans analyze only your bank-matched messages on your tap — paid-to vs received-from,
+          exact name and reason. Manual entries send just title + amount + date.
         </p>
         <div>
           <label className="block text-[11px] text-slate-400 mb-1">Groq API key (stored only on this device)</label>

@@ -154,12 +154,13 @@ export default function DashboardView({
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [reminders, currentMonthYearStr]);
 
-  // Today's + this month's spends
+  // Today's + this month's spends (outflows only)
   const spendTotals = useMemo(() => {
     const today = todayIST();
     let todayTotal = 0;
     let monthTotal = 0;
     for (const e of expenses) {
+      if (e.direction === 'in') continue;
       if (e.date === today) todayTotal += e.amount;
       if (e.date.startsWith(currentMonthYearStr)) monthTotal += e.amount;
     }

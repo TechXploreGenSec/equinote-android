@@ -1,8 +1,8 @@
 # EquiNote — EMI & Loan Tracker (Android, Offline-First)
 
-> ✅ **Stable version: v3.0.5** — [download the stable APK](../../releases/tag/v3.0.5).
-> The `stable` branch and `stable` tag are pinned to v3.0.5 and never move
-> except for a deliberate stable release.
+> ✅ **Stable version: v3.1.0** — [download the stable APK](../../releases/tag/v3.1.0).
+> The `stable` branch and `stable` tag point to v3.1.0 (daily spends + SMS scan
+> + AI reasoning). They never move except for a deliberate stable release.
 > 🧪 **Beta line: v3.1.0-beta.x** — daily spends + SMS scan, published as
 > pre-releases so Latest/stable never moves.
 
@@ -53,15 +53,18 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## v3.1.0-beta.5 changelog (AI reason analysis)
+## v3.1.0 changelog (STABLE — spends + AI reasoning)
 
-- **Groq free-tier reason AI** — key + model configurable in Settings
-  (free key at `console.groq.com`, tested in-app). One batched call fills
-  exact names + reasons for every scanned SMS row; manual adds get a
-  "Suggest with AI" button.
-- **Fragment-only privacy** — on-device splitting first; only
-  merchant + amount + date fragments are sent, full SMS text never leaves
-  the phone.
+- **Daily spends + accounts** — Spends tab with mandatory reasons, categories,
+  source accounts and balances; this-month IST scan window; promo/ad SMS excluded.
+- **Your-banks SMS filter** — 60+ bank/wallet directory, sender-ID auto-suggest,
+  header normalization, per-row account auto-match.
+- **AI reads full bank-matched messages** — one batched Groq call per scan
+  (free key in Settings) decides paid-to vs received-from, exact name as written,
+  and the reason (person → paid to a person, Zomato → bought food). Only
+  bank-matched messages, only on your tap; manual adds keep an AI suggest button.
+- **Received money tracked** — credits import as Received records with
+  badges, month in-totals and per-account in/out; manual adds have Paid/Received toggle.
 
 ## v3.1.0-beta.4 changelog (scan you asked for)
 

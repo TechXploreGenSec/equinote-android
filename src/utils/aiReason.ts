@@ -1,9 +1,10 @@
 /**
  * Groq free-tier reason analysis for spends.
  *
- * PRIVACY: the full SMS body never leaves the phone. Pattern-based
- * splitting runs on-device first (merchant / amount / sender / date) and
- * only those fragments are sent — batched into ONE request for all rows.
+ * Two modes:
+ * - analyzeSpends: fragment-only (merchant/amount/date), privacy-first.
+ * - analyzeMessages: full bank-matched SMS text, for paid-to vs received-from
+ *   reasoning (explicit user choice in the SMS review screen).
  */
 
 export const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
@@ -24,6 +25,8 @@ export interface SpendAnalysis {
   name: string;
   /** Short reason phrase, e.g. "Food delivery dinner". */
   reason: string;
+  /** Present only in full-message mode: money out or money in. */
+  direction?: 'out' | 'in';
 }
 
 export function buildAnalysisPrompt(frags: SpendFragment[]): string {
@@ -125,4 +128,89 @@ export async function testGroqKey(apiKey: string, model: string): Promise<{ ok: 
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+export interface FullMessage {
+  index: number;
+  sender: string;
+  date: string;
+  body: string;
+}
+
+function buildFullMessagePrompt(msgs: FullMessage[]): string {
+  const lines = msgs.map((m) => `${m.index}. [${m.sender} ${m.date}] ${m.body}`);
+  return [
+    'You read Indian bank/UPI SMS texts. For each numbered message decide FIRST whether money went OUT of the account (paid to someone: debit, spent, paid, UPI to a person/merchant) or came IN (received from someone: credited, deposit, refund, addition).',
+    'Then give the EXACT payee or sender name as written in the text (a person name like "V GOKUL", or merchant like "SWIGGY" / "Zomato" — max 4 words, no paraphrasing), plus a short lowercase reason phrase (2-6 words) explaining why: a person name means "paid to a person", Zomato/Swiggy means bought food, and so on.',
+    'Reply with ONLY a JSON array like [{"index":0,"direction":"out","name":"V GOKUL","reason":"upi transfer to person"}]. direction is "out" or "in". No markdown, no commentary.',
+    'Messages:',
+    ...lines,
+  ].join('\n');
+}
+
+function parseFullAnalysis(text: string, count: number): SpendAnalysis[] {
+  const base = parseAnalysisResponse(text, count);
+  if (base.length === 0) return [];
+  const clean = text.replace(/```(?:json)?/gi, '').trim();
+  const start = clean.indexOf('[');
+  const end = clean.lastIndexOf(']');
+  try {
+    const arr = JSON.parse(clean.slice(start, end + 1)) as { index: number; direction?: string }[];
+    const dirByIndex = new Map<number, 'out' | 'in'>();
+    for (const x of arr) {
+      if (x && Number.isInteger(x.index) && (x.direction === 'in' || x.direction === 'out')) {
+        dirByIndex.set(x.index, x.direction);
+      }
+    }
+    return base.map((b) => ({ ...b, direction: dirByIndex.get(b.index) }));
+  } catch {
+    return base;
+  }
+}
+
+/**
+ * Full-message analysis over bank-matched SMS (explicit user tap).
+ * One batched call for all messages. Throws with a friendly message.
+ */
+export async function analyzeMessages(
+  msgs: FullMessage[],
+  apiKey: string,
+  model: string
+): Promise<SpendAnalysis[]> {
+  if (msgs.length === 0) throw new Error('nothing to analyze');
+  if (!apiKey.trim()) throw new Error('Add your Groq API key in Settings first.');
+  const res = await fetch(GROQ_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: (model || DEFAULT_GROQ_MODEL).trim(),
+      temperature: 0.2,
+      max_tokens: 2048,
+      messages: [
+        {
+          role: 'system',
+          content: 'You output only JSON arrays. No markdown, no explanations.',
+        },
+        { role: 'user', content: buildFullMessagePrompt(msgs) },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    let detail = `${res.status}`;
+    try {
+      const err = (await res.json()) as { error?: { message?: string } };
+      if (err?.error?.message) detail += ` — ${err.error.message}`;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(`Groq error ${detail}`);
+  }
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const content = data.choices?.[0]?.message?.content || '';
+  const parsed = parseFullAnalysis(content, msgs.length);
+  if (parsed.length === 0) throw new Error('AI returned no usable rows — try again.');
+  return parsed;
 }

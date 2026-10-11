@@ -120,6 +120,8 @@ export interface ExpenseItem {
   category: ExpenseCategory;
   accountId?: string;
   reason: string;
+  /** Money direction: 'out' paid, 'in' received (default 'out'). */
+  direction?: 'out' | 'in';
   smsId?: string; // android inbox id, to skip re-imports
   createdAt: string;
 }

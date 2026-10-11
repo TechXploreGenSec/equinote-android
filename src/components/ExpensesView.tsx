@@ -8,12 +8,12 @@ import { ExpenseItem, ExpenseAccount, ExpenseCategory, ExpenseAccountKind, UserS
 import { formatCurrency } from '../utils/finance';
 import {
   isSmsSupported, ensureSmsPermission, readInboxSmsThisMonth,
-  filterDebitCandidates, filterByUserBanks,
-  suggestExpenseTitle, SpendCandidate,
+  collectTransactionCandidates, filterByUserBanks,
+  suggestExpenseTitle,
 } from '../utils/smsImport';
 import { monthRangeLabel, todayStr as todayIST, monthPrefix as monthPrefixIST } from '../utils/datetime';
 import { senderIdsForBankName } from '../utils/bankDirectory';
-import { analyzeSpends, DEFAULT_GROQ_MODEL } from '../utils/aiReason';
+import { analyzeMessages, analyzeSpends, DEFAULT_GROQ_MODEL } from '../utils/aiReason';
 
 interface ExpensesViewProps {
   expenses: ExpenseItem[];
@@ -71,11 +71,19 @@ function defaultDueDate(): string {
   return d.toISOString().split('T')[0];
 }
 
-interface SmsRow extends SpendCandidate {
+interface SmsRow {
+  smsId: string;
+  amount: number;
+  accountLast4?: string;
+  merchant?: string;
+  sender: string;
+  date: string;
+  body: string;
   selected: boolean;
   title: string;
   reason: string;
   accountId: string;
+  direction: 'out' | 'in';
 }
 
 export default function ExpensesView({
@@ -95,6 +103,7 @@ export default function ExpensesView({
   const [category, setCategory] = useState<ExpenseCategory>('food');
   const [accountId, setAccountId] = useState('');
   const [reason, setReason] = useState('');
+  const [direction, setDirection] = useState<'out' | 'in'>('out');
 
   const [isAccountFormOpen, setIsAccountFormOpen] = useState(false);
   const [accName, setAccName] = useState('');
@@ -107,27 +116,33 @@ export default function ExpensesView({
   const [isSmsOpen, setIsSmsOpen] = useState(false);
   const [smsStatus, setSmsStatus] = useState<string | null>(null);
   const [smsRows, setSmsRows] = useState<SmsRow[]>([]);
+  const [smsBodies, setSmsBodies] = useState<Map<string, string>>(new Map());
   const [isScanning, setIsScanning] = useState(false);
   const [isAiFilling, setIsAiFilling] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState(false);
 
   const monthPrefix = monthPrefixIST();
 
-  const { todayTotal, monthTotal } = useMemo(() => {
+  const { todayTotal, monthTotal, monthInTotal } = useMemo(() => {
     const t = todayIST();
     let today = 0;
     let month = 0;
+    let monthIn = 0;
     for (const e of expenses) {
-      if (e.date === t) today += e.amount;
-      if (e.date.startsWith(monthPrefix)) month += e.amount;
+      const isIn = e.direction === 'in';
+      if (e.date === t && !isIn) today += e.amount;
+      if (e.date.startsWith(monthPrefix)) {
+        if (isIn) monthIn += e.amount;
+        else month += e.amount;
+      }
     }
-    return { todayTotal: today, monthTotal: month };
+    return { todayTotal: today, monthTotal: month, monthInTotal: monthIn };
   }, [expenses, monthPrefix]);
 
   const categoryTotals = useMemo(() => {
     const map = new Map<ExpenseCategory, number>();
     for (const e of expenses) {
-      if (!e.date.startsWith(monthPrefix)) continue;
+      if (!e.date.startsWith(monthPrefix) || e.direction === 'in') continue;
       map.set(e.category, (map.get(e.category) || 0) + e.amount);
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
@@ -136,9 +151,12 @@ export default function ExpensesView({
   const accountStats = useMemo(() => {
     return accounts.map((a) => {
       const spent = expenses
-        .filter((e) => e.accountId === a.id && e.date.startsWith(monthPrefix))
+        .filter((e) => e.accountId === a.id && e.date.startsWith(monthPrefix) && e.direction !== 'in')
         .reduce((s, e) => s + e.amount, 0);
-      return { account: a, spent };
+      const received = expenses
+        .filter((e) => e.accountId === a.id && e.date.startsWith(monthPrefix) && e.direction === 'in')
+        .reduce((s, e) => s + e.amount, 0);
+      return { account: a, spent, received };
     });
   }, [accounts, expenses, monthPrefix]);
 
@@ -155,7 +173,7 @@ export default function ExpensesView({
 
   const resetExpenseForm = () => {
     setTitle(''); setAmount(''); setDate(todayIST());
-    setCategory('food'); setAccountId(''); setReason('');
+    setCategory('food'); setAccountId(''); setReason(''); setDirection('out');
   };
 
   const handleSubmitExpense = (e: React.FormEvent) => {
@@ -171,6 +189,7 @@ export default function ExpensesView({
       category,
       accountId: accountId || undefined,
       reason: reason.trim(),
+      direction,
       createdAt: new Date().toISOString(),
     });
     resetExpenseForm();
@@ -211,37 +230,39 @@ export default function ExpensesView({
       setSmsStatus('Reading this month’s inbox… (stays on your phone)');
       const messages = await readInboxSmsThisMonth(300);
       const { loadImportedSmsIds } = await import('../utils/storage');
-      const { debits, skippedCredits } = filterDebitCandidates(messages, loadImportedSmsIds());
+      const { candidates, bodies } = collectTransactionCandidates(messages, loadImportedSmsIds());
+      setSmsBodies(bodies);
       const range = monthRangeLabel();
-      if (debits.length === 0) {
-        setSmsStatus(
-          messages.length === 0
-            ? `No SMS from ${range}.`
-            : `Scanned ${messages.length} SMS (${range}) — no new spendings found${skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : ''}.`
-        );
+      if (candidates.length === 0) {
+        setSmsStatus(`Scanned ${messages.length} SMS (${range}) — no new bank transactions found.`);
         setSmsRows([]);
         return;
       }
-      const { mine, others, filtered } = filterByUserBanks(debits, accounts);
+      const { mine, others, filtered } = filterByUserBanks(candidates, accounts);
       if (mine.length === 0) {
         setSmsStatus(
-          `Scanned ${messages.length} SMS (${range}), found ${debits.length} spending${debits.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
+          `Scanned ${messages.length} SMS (${range}), found ${candidates.length} transaction${candidates.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
         );
         setSmsRows([]);
         return;
       }
       setSmsRows(mine.map(({ candidate: d, accountId }) => ({
-        ...d,
+        smsId: d.smsId,
+        amount: d.amount,
+        accountLast4: d.accountLast4,
+        sender: d.sender,
+        date: d.date,
+        body: bodies.get(d.smsId) || '',
         selected: true,
         title: suggestExpenseTitle(d),
         reason: '',
         accountId: accountId || accounts[0]?.id || '',
+        direction: d.direction === 'credit' ? 'in' as const : 'out' as const,
       })));
       setSmsStatus(
         `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''} (${range})` +
         (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
-        (skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : '') +
-        '. Confirm each new spend below — names are kept exactly as the SMS mentions them, reason optional.' +
+        '. Tap “Analyze with AI” for paid-vs-received reasoning, or review and import directly.' +
         (!filtered ? ' Tip: add sender IDs in My accounts to filter only your banks.' : '')
       );
     } catch (err) {
@@ -254,8 +275,8 @@ export default function ExpensesView({
   const groqKey = settings.groqApiKey || '';
   const groqModel = settings.groqModel || DEFAULT_GROQ_MODEL;
 
-  // One batched AI call fills exact names + reasons for every scanned row.
-  // Only merchant/amount/date fragments are sent — never the SMS text.
+  // One batched AI call over the FULL matched messages: decides paid-to
+  // vs received-from, exact name, and reason. Explicit tap only.
   const handleAiFillReasons = async () => {
     if (smsRows.length === 0) return;
     if (!groqKey.trim()) {
@@ -264,15 +285,8 @@ export default function ExpensesView({
     }
     setIsAiFilling(true);
     try {
-      const out = await analyzeSpends(
-        smsRows.map((r, i) => ({
-          index: i,
-          merchant: r.title || undefined,
-          sender: r.sender,
-          amount: r.amount,
-          date: r.date,
-          accountLast4: r.accountLast4,
-        })),
+      const out = await analyzeMessages(
+        smsRows.map((r, i) => ({ index: i, sender: r.sender, date: r.date, body: r.body || smsBodies.get(r.smsId) || '' })),
         groqKey,
         groqModel
       );
@@ -282,12 +296,13 @@ export default function ExpensesView({
           if (!hit) return row;
           return {
             ...row,
-            title: row.title.trim() ? row.title : hit.name,
+            title: row.title.trim() && row.title !== suggestExpenseTitle(row) ? row.title : hit.name,
             reason: row.reason.trim() ? row.reason : hit.reason,
+            direction: hit.direction || row.direction,
           };
         })
       );
-      setSmsStatus(`AI filled ${out.length} row${out.length > 1 ? 's' : ''} — review, then import.`);
+      setSmsStatus(`AI analyzed ${out.length} message${out.length > 1 ? 's' : ''} — paid vs received, names, reasons. Review, then import.`);
     } catch (err) {
       setSmsStatus(`AI fill failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -324,12 +339,13 @@ export default function ExpensesView({
     }
   };
 
-  const handleImportSms = () => {    const chosen = smsRows.filter((r) => r.selected);
+  const handleImportSms = () => {
+    const chosen = smsRows.filter((r) => r.selected);
     if (chosen.length === 0) {
       setSmsStatus('Select at least one spending to import.');
       return;
     }
-    // Bulk 45-day import: reason is optional — fall back to the SMS source
+    // Bulk month import: reason is optional — fall back to the SMS source
     // so history imports never get blocked. Manual adds still require it.
     const items: ExpenseItem[] = chosen.map((r) => ({
       id: `exp-${Date.now()}-${r.smsId}`,
@@ -339,12 +355,18 @@ export default function ExpensesView({
       category: 'other' as ExpenseCategory,
       accountId: r.accountId || undefined,
       reason: r.reason.trim() || `From SMS (${r.sender})`,
+      direction: r.direction,
       smsId: r.smsId,
       createdAt: new Date().toISOString(),
     }));
     onImportSmsExpenses(items, chosen.map((r) => r.smsId));
     setSmsRows([]);
-    setSmsStatus(`Imported ${items.length} spend${items.length > 1 ? 's' : ''} with reasons.`);
+    const ins = items.filter((i) => i.direction === 'in').length;
+    setSmsStatus(
+      `Imported ${items.length} record${items.length > 1 ? 's' : ''}` +
+      (ins > 0 ? ` (${items.length - ins} paid out, ${ins} received)` : '') +
+      '.'
+    );
   };
 
   const maxCat = categoryTotals.length > 0 ? categoryTotals[0][1] : 0;
@@ -388,6 +410,11 @@ export default function ExpensesView({
           <div className="text-xl font-extrabold text-amber-300 mt-1 font-mono">
             {formatCurrency(monthTotal, settings.currencySymbol)}
           </div>
+          {monthInTotal > 0 && (
+            <span className="text-[10px] text-emerald-400 mt-0.5 block">
+              +{formatCurrency(monthInTotal, settings.currencySymbol)} received
+            </span>
+          )}
         </div>
       </div>
 
@@ -491,7 +518,7 @@ export default function ExpensesView({
         {accountStats.length === 0 ? (
           <p className="text-[11px] text-slate-500">No accounts yet — add where your money goes out from.</p>
         ) : (
-          accountStats.map(({ account: a, spent }) => {
+          accountStats.map(({ account: a, spent, received }) => {
             const Icon = accountIcon(a.kind);
             const used = expenses.some((e) => e.accountId === a.id);
             return (
@@ -502,6 +529,7 @@ export default function ExpensesView({
                     <div className="text-xs font-bold text-white truncate">{a.name}</div>
                     <div className="text-[10px] text-slate-500">
                       {ACCOUNT_KINDS[a.kind].label} · out this month {formatCurrency(spent, settings.currencySymbol)}
+                      {received > 0 ? ` · in ${formatCurrency(received, settings.currencySymbol)}` : ''}
                       {typeof a.balance === 'number' ? ` · left ${formatCurrency(Math.max(0, a.balance - spent), settings.currencySymbol)}` : ''}
                     </div>
                     {(a.bankName || a.last4 || a.senderIds) && (
@@ -549,7 +577,14 @@ export default function ExpensesView({
                         <Icon className="w-4 h-4 text-slate-300" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-white truncate">{e.title}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-xs font-bold text-white truncate">{e.title}</div>
+                          {e.direction === 'in' && (
+                            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded shrink-0">
+                              Received
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-amber-300/90 mt-0.5 truncate">Why: {e.reason}</div>
                         <div className="text-[10px] text-slate-500 mt-0.5">
                           {EXPENSE_CATEGORIES[e.category].label} · {accountName(e.accountId)}
@@ -591,6 +626,20 @@ export default function ExpensesView({
               </button>
             </div>
             <form onSubmit={handleSubmitExpense} className="p-5 space-y-3.5 text-xs text-slate-300">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button" onClick={() => setDirection('out')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${direction === 'out' ? 'bg-rose-500/20 border-rose-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
+                >
+                  Paid out
+                </button>
+                <button
+                  type="button" onClick={() => setDirection('in')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${direction === 'in' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
+                >
+                  Received in
+                </button>
+              </div>
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1">What *</label>
                 <input type="text" required value={title} onChange={(e) => setTitle(e.target.value)}
@@ -704,12 +753,14 @@ export default function ExpensesView({
                       {isAiFilling
                         ? 'AI analyzing… (one batched call)'
                         : groqKey.trim()
-                          ? '✨ AI fill exact names + reasons (one go)'
-                          : '✨ AI fill — add free Groq key in Settings'}
+                          ? '✨ Analyze with AI — paid vs received + names'
+                          : '✨ AI analysis — add free Groq key in Settings'}
                     </span>
                   </button>
                   <p className="text-[10px] text-slate-500 leading-relaxed">
-                    AI sees only merchant + amount + date fragments — your full SMS text never leaves the phone.
+                    {groqKey.trim()
+                      ? 'AI reads the matched bank messages only, on your tap — decides paid-to vs received-from, exact name and reason.'
+                      : 'Without a key, rows use on-device parsing (debits shown, direction editable below).'}
                   </p>
                 </>
               )}
@@ -726,6 +777,9 @@ export default function ExpensesView({
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
                       </span>
                       <span className="font-extrabold text-white font-mono">{formatCurrency(r.amount, settings.currencySymbol)}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${r.direction === 'in' ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
+                        {r.direction === 'in' ? 'Received' : 'Paid out'}
+                      </span>
                       <span className="text-[10px] text-slate-400 truncate">
                         {r.date}{r.accountLast4 ? ` · ·${r.accountLast4}` : ''} · <span className="font-mono text-sky-400/90">{r.sender}</span>
                       </span>
@@ -737,17 +791,33 @@ export default function ExpensesView({
                     placeholder="Title"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text" value={r.reason}
-                      onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
-                      placeholder="Reason (optional for past imports)"
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
-                    />
+                  <input
+                    type="text" value={r.reason}
+                    onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
+                    placeholder="Reason (optional for past imports)"
+                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-1 col-span-1">
+                      <button
+                        type="button"
+                        onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'out' as const } : x))}
+                        className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'out' ? 'bg-rose-500/20 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                      >
+                        Out
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'in' as const } : x))}
+                        className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'in' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                      >
+                        In
+                      </button>
+                    </div>
                     <select
                       value={r.accountId}
                       onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, accountId: e.target.value } : x))}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 col-span-2"
                     >
                       <option value="">No account</option>
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}

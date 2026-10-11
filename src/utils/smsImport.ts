@@ -195,7 +195,25 @@ export function filterDebitCandidates(
   return { debits, skippedCredits };
 }
 
-export function suggestExpenseTitle(c: SpendCandidate): string {
+/** All bank-transaction candidates (in + out) not imported before — for AI analysis. */
+export function collectTransactionCandidates(
+  messages: SmsMessage[],
+  importedIds: string[]
+): { candidates: SpendCandidate[]; bodies: Map<string, string> } {
+  const seen = new Set(importedIds);
+  const candidates: SpendCandidate[] = [];
+  const bodies = new Map<string, string>();
+  for (const msg of messages) {
+    if (seen.has(msg.id)) continue;
+    const c = parseSmsBody(msg);
+    if (!c) continue;
+    candidates.push(c);
+    bodies.set(msg.id, msg.body || '');
+  }
+  return { candidates, bodies };
+}
+
+export function suggestExpenseTitle(c: Pick<SpendCandidate, 'merchant' | 'sender'>): string {
   // Keep the name exactly as the SMS mentions it: merchant text first,
   // otherwise the raw sender id untouched (e.g. "JD-HDFCBK" stays as-is).
   if (c.merchant) return c.merchant;
