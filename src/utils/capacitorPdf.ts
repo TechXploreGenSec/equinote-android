@@ -1,15 +1,9 @@
-import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+import { isNative as isNativeAndroid } from './shareFile';
 import type jsPDF from 'jspdf';
 
-export function isNativeAndroid(): boolean {
-  try {
-    return Capacitor.isNativePlatform();
-  } catch {
-    return false;
-  }
-}
+export { isNativeAndroid };
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);

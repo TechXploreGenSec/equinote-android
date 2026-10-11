@@ -1,0 +1,4 @@
+Title,Lender,Category,Principal,Interest Rate,Tenure Months,Paid Months,Monthly EMI,Due Day,Start Date,Account Number,Auto-Debit,Notes,Paid This Month
+"HDFC Home Loan",HDFC Bank,home,4200000,8.4,240,42,,5,2023-04-05,HL-0988472911,Salary Account (HDFC),Tax exemption under Sec 24b and 80C,yes
+"Creta SX Auto Loan",State Bank of India,vehicle,950000,8.75,60,22,,15,2024-12-15,AL-SBI-558291,SBI Savings Acc,Need Form 35 on settlement,no
+"Laptop No-Cost EMI",Bajaj Finserv,gadget,90000,0,12,3,7500,12,2026-08-12,,,Brand subvention EMI,yes

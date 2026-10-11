@@ -248,8 +248,16 @@ export default function App() {
     playChimeSound('success');
   };
 
-  const handleSaveReminder = (reminder: ReminderItem) => {
-    const updated = [reminder, ...reminders];
+  // Bulk CSV import: append parsed loans as-is (parser already assigns ids).
+  const handleImportLoans = (newLoans: LoanItem[]) => {
+    if (newLoans.length === 0) return;
+    const updated = [...newLoans, ...loans];
+    setLoans(updated);
+    saveLoans(updated);
+    playChimeSound('success');
+  };
+
+  const handleSaveReminder = (reminder: ReminderItem) => {    const updated = [reminder, ...reminders];
     setReminders(updated);
     saveReminders(updated);
     playChimeSound('pop');
@@ -387,6 +395,7 @@ export default function App() {
             onSelectLoan={(loan) => setSelectedLoanForDetail(loan)}
             onOpenPayModal={(loan) => setPayingLoan(loan)}
             onOpenPdfExport={() => handleOpenPdfModal()}
+            onImportLoans={handleImportLoans}
           />
         )}
 

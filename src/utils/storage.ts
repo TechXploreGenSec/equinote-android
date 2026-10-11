@@ -1,4 +1,5 @@
-import { LoanItem, PaymentRecord, UserSettings, AppNotification, ReminderItem } from '../types';
+import { LoanItem, LoanCategory, PaymentRecord, UserSettings, AppNotification, ReminderItem } from '../types';
+import { calculateEmi } from './finance';
 
 const STORAGE_KEYS = {
   LOANS: 'equinote_loans_v1',
@@ -401,4 +402,116 @@ export function parsePaymentsCsv(csvText: string, loans: LoanItem[]): CsvImportR
   }
 
   return { records, imported: records.length, skipped };
+}
+
+export const LOANS_CSV_EXAMPLE = [
+  'Title,Lender,Category,Principal,Interest Rate,Tenure Months,Paid Months,Monthly EMI,Due Day,Start Date,Account Number,Auto-Debit,Notes,Paid This Month',
+  '"HDFC Home Loan",HDFC Bank,home,4200000,8.4,240,42,,5,2023-04-05,HL-0988472911,Salary Account (HDFC),Tax exemption under Sec 24b and 80C,yes',
+  '"Creta SX Auto Loan",State Bank of India,vehicle,950000,8.75,60,22,,15,2024-12-15,AL-SBI-558291,SBI Savings Acc,Need Form 35 on settlement,no',
+  '"Laptop No-Cost EMI",Bajaj Finserv,gadget,90000,0,12,3,7500,12,2026-08-12,,,Brand subvention EMI,yes',
+].join('\n');
+
+const LOAN_CATEGORIES: LoanCategory[] = [
+  'home', 'vehicle', 'gadget', 'personal', 'credit_card',
+  'education', 'bnpl', 'peer', 'business',
+];
+
+export interface LoanCsvImportResult {
+  loans: LoanItem[];
+  imported: number;
+  skipped: number;
+}
+
+/**
+ * Parse a bulk-upload CSV of loans. Columns: Title*, Lender*, Category,
+ * Principal*, Interest Rate, Tenure Months*, Paid Months, Monthly EMI
+ * (blank = auto-calculated), Due Day*, Start Date, Account Number,
+ * Auto-Debit, Notes, Paid This Month (yes/no) (*required).
+ */
+export function parseLoansCsv(csvText: string): LoanCsvImportResult {
+  const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return { loans: [], imported: 0, skipped: 0 };
+
+  const header = splitCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (names: string[]) => {
+    for (const n of names) {
+      const i = header.findIndex((h) => h === n);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const iTitle = idx(['title', 'loan title', 'loan', 'name']);
+  const iLender = idx(['lender', 'bank', 'platform']);
+  const iCat = idx(['category', 'type']);
+  const iPrincipal = idx(['principal', 'principal amount', 'amount', 'total principal']);
+  const iRate = idx(['interest rate', 'rate', 'interest', 'annual rate']);
+  const iTenure = idx(['tenure months', 'tenure', 'total months', 'months']);
+  const iPaid = idx(['paid months', 'already paid', 'paid']);
+  const iEmi = idx(['monthly emi', 'emi']);
+  const iDue = idx(['due day', 'due date day', 'due']);
+  const iStart = idx(['start date', 'start', 'date']);
+  const iAcc = idx(['account number', 'account', 'agreement']);
+  const iDebit = idx(['auto-debit', 'auto debit', 'auto-debit account', 'mandate']);
+  const iNotes = idx(['notes', 'note', 'remarks']);
+  const iPaidMonth = idx(['paid this month', 'this month paid', 'current month paid']);
+
+  const loans: LoanItem[] = [];
+  let skipped = 0;
+  const now = new Date();
+  const monthStr = currentMonthYear(now);
+
+  for (let r = 1; r < lines.length; r++) {
+    const cols = splitCsvLine(lines[r]);
+    const title = (iTitle >= 0 ? cols[iTitle] : '').trim();
+    const lender = (iLender >= 0 ? cols[iLender] : '').trim();
+    const principal = Number(iPrincipal >= 0 ? cols[iPrincipal] : NaN);
+    const totalMonths = Math.round(Number(iTenure >= 0 ? cols[iTenure] : NaN));
+    if (!title || !lender || !Number.isFinite(principal) || principal <= 0 ||
+        !Number.isFinite(totalMonths) || totalMonths <= 0) {
+      skipped++;
+      continue;
+    }
+    const rawCat = (iCat >= 0 ? cols[iCat] : '').trim().toLowerCase();
+    const category: LoanCategory = LOAN_CATEGORIES.includes(rawCat as LoanCategory)
+      ? (rawCat as LoanCategory)
+      : 'personal';
+    const interestRate = iRate >= 0 && cols[iRate] !== '' ? Number(cols[iRate]) || 0 : 0;
+    const paidMonths = Math.max(
+      0,
+      Math.min(totalMonths, Math.round(Number(iPaid >= 0 && cols[iPaid] !== '' ? cols[iPaid] : 0)) || 0)
+    );
+    const dueDayRaw = Math.round(Number(iDue >= 0 && cols[iDue] !== '' ? cols[iDue] : 5)) || 5;
+    const dueDay = Math.max(1, Math.min(31, dueDayRaw));
+    let monthlyEmi = iEmi >= 0 && cols[iEmi] !== '' ? Number(cols[iEmi]) : 0;
+    if (!Number.isFinite(monthlyEmi) || monthlyEmi <= 0) {
+      monthlyEmi = calculateEmi(principal, interestRate, totalMonths);
+    }
+    if (!Number.isFinite(monthlyEmi) || monthlyEmi <= 0) {
+      skipped++;
+      continue;
+    }
+    const paidFlag = (iPaidMonth >= 0 ? cols[iPaidMonth] : '').trim().toLowerCase();
+    const paidThisMonth = ['yes', 'y', 'true', '1', 'paid'].includes(paidFlag);
+    loans.push({
+      id: `loan-${Date.now()}-${r}`,
+      title,
+      lender,
+      category,
+      principal,
+      interestRate,
+      monthlyEmi,
+      dueDay,
+      totalMonths,
+      paidMonths,
+      lastPaidMonthYear: paidThisMonth ? monthStr : undefined,
+      startDate: (iStart >= 0 ? cols[iStart] : '').trim() || now.toISOString().split('T')[0],
+      accountNumber: (iAcc >= 0 ? cols[iAcc] : '').trim() || undefined,
+      autoDebitBank: (iDebit >= 0 ? cols[iDebit] : '').trim() || undefined,
+      notes: (iNotes >= 0 ? cols[iNotes] : '').trim() || undefined,
+      isClosed: false,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  return { loans, imported: loans.length, skipped };
 }

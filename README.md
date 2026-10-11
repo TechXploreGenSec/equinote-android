@@ -47,6 +47,18 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.1 changelog (download fix)
+
+- **Android downloads fixed** — JSON backup export, payment CSV export/example,
+  and loans CSV example now save via the native Documents + Share sheet
+  (`downloadTextFile`) instead of WebView anchor downloads, which never fire on
+  Android. Same files download normally on web.
+- **Loans bulk upload (Loans tab)** — import full loan portfolios from CSV with
+  in-app format guide + downloadable `EquiNote_Loans_Example.csv`
+  (`Title, Lender, Category, Principal, Interest Rate, Tenure Months,
+  Paid Months, Monthly EMI (blank = auto), Due Day, Start Date,
+  Account Number, Auto-Debit, Notes, Paid This Month (yes/no)`).
+
 ## v3.0.0 changelog
 
 - **Simulator removed** — prepayment simulator UI, engine (`simulatePrepayment`),

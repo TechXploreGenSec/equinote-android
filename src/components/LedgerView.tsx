@@ -6,6 +6,7 @@ import {
 import { PaymentRecord, UserSettings, LoanItem } from '../types';
 import { formatCurrency } from '../utils/finance';
 import { exportPaymentsCsv, parsePaymentsCsv, PAYMENTS_CSV_EXAMPLE } from '../utils/storage';
+import { downloadTextFile } from '../utils/shareFile';
 
 interface LedgerViewProps {
   payments: PaymentRecord[];
@@ -54,25 +55,16 @@ export default function LedgerView({
       .reduce((sum, p) => sum + p.amount, 0);
   }, [payments]);
 
-  const handleDownloadCsv = () => {
-    const csv = exportPaymentsCsv(payments);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `EquiNote_Payment_Ledger_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadCsv = async () => {
+    await downloadTextFile(
+      `EquiNote_Payment_Ledger_${new Date().toISOString().split('T')[0]}.csv`,
+      exportPaymentsCsv(payments),
+      'EquiNote Ledger'
+    );
   };
 
-  const handleDownloadExampleCsv = () => {
-    const blob = new Blob([PAYMENTS_CSV_EXAMPLE], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'EquiNote_Payments_Example.csv';
-    link.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadExampleCsv = async () => {
+    await downloadTextFile('EquiNote_Payments_Example.csv', PAYMENTS_CSV_EXAMPLE, 'EquiNote Example');
   };
 
   const handleImportCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react';
-import { 
-  Search, Plus, Filter, CheckCircle2, 
-  ChevronRight, ArrowUpDown, ShieldCheck, Check, FileText
+import { useState, useMemo, useRef } from 'react';
+import {
+  Search, Plus, Filter, CheckCircle2,
+  ChevronRight, ArrowUpDown, ShieldCheck, Check, FileText, Upload, FileSpreadsheet
 } from 'lucide-react';
 import { LoanItem, UserSettings, LoanCategory } from '../types';
-import { calculateDueStatus } from '../utils/storage';
+import { calculateDueStatus, parseLoansCsv, LOANS_CSV_EXAMPLE } from '../utils/storage';
 import { formatCurrency, calculateRemainingBalance } from '../utils/finance';
+import { downloadTextFile } from '../utils/shareFile';
 import { CATEGORIES } from '../utils/categories';
 
 interface LoansViewProps {
@@ -15,6 +16,7 @@ interface LoansViewProps {
   onSelectLoan: (loan: LoanItem) => void;
   onOpenPayModal: (loan: LoanItem) => void;
   onOpenPdfExport: () => void;
+  onImportLoans: (loans: LoanItem[]) => void;
 }
 
 type FilterStatus = 'all_active' | 'due_soon' | 'closed' | 'all';
@@ -27,11 +29,14 @@ export default function LoansView({
   onSelectLoan,
   onOpenPayModal,
   onOpenPdfExport,
+  onImportLoans,
 }: LoansViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all_active');
   const [selectedCategory, setSelectedCategory] = useState<LoanCategory | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortOption>('due_day');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const loansInputRef = useRef<HTMLInputElement>(null);
 
   // Filter and sort loans
   const filteredLoans = useMemo(() => {
@@ -88,6 +93,33 @@ export default function LoansView({
   const activeCount = useMemo(() => loans.filter((l) => !l.isClosed).length, [loans]);
   const closedCount = useMemo(() => loans.filter((l) => l.isClosed).length, [loans]);
 
+  const handleDownloadLoansExample = async () => {
+    await downloadTextFile('EquiNote_Loans_Example.csv', LOANS_CSV_EXAMPLE, 'EquiNote Example');
+  };
+
+  const handleImportLoansFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const { loans: parsed, imported, skipped } = parseLoansCsv(content);
+      if (imported > 0) {
+        onImportLoans(parsed);
+        setImportStatus(
+          `Imported ${imported} loan${imported > 1 ? 's' : ''}` +
+          (skipped > 0 ? `, skipped ${skipped} bad row${skipped > 1 ? 's' : ''}` : '') +
+          '.'
+        );
+      } else {
+        setImportStatus('No loans imported. Check the example CSV format below.');
+      }
+      setTimeout(() => setImportStatus(null), 6000);
+    };
+    reader.readAsText(file);
+    if (loansInputRef.current) loansInputRef.current.value = '';
+  };
+
   return (
     <div className="space-y-4 px-4 pb-28 pt-2 max-w-2xl mx-auto">
       {/* Top Header */}
@@ -102,6 +134,22 @@ export default function LoansView({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => loansInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-semibold transition active:scale-95"
+            title="Bulk upload loans from CSV"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Bulk Upload</span>
+          </button>
+          <input
+            ref={loansInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleImportLoansFile}
+            className="hidden"
+          />
+
           <button
             onClick={onOpenPdfExport}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition active:scale-95"
@@ -119,6 +167,34 @@ export default function LoansView({
             <span>Add Loan</span>
           </button>
         </div>
+      </div>
+
+      {/* Loans CSV format help + example */}
+      <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            Loans bulk upload format
+          </span>
+          <button
+            onClick={handleDownloadLoansExample}
+            className="text-[11px] font-bold text-emerald-400 hover:underline"
+          >
+            Download example CSV
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed">
+          Columns: <span className="font-mono text-slate-300">Title, Lender, Category, Principal, Interest Rate, Tenure Months, Paid Months, Monthly EMI (blank = auto), Due Day, Start Date, Account Number, Auto-Debit, Notes, Paid This Month (yes/no)</span>.
+          Categories: home, vehicle, gadget, personal, credit_card, education, bnpl, peer, business.
+        </p>
+        <pre className="text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-2.5 overflow-x-auto whitespace-pre">
+{LOANS_CSV_EXAMPLE}
+        </pre>
+        {importStatus && (
+          <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+            {importStatus}
+          </div>
+        )}
       </div>
 
       {/* Search Bar */}

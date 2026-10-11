@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { UserSettings } from '../types';
 import { exportAppData, importAppData } from '../utils/storage';
+import { downloadTextFile } from '../utils/shareFile';
 import { formatCurrency } from '../utils/finance';
 
 interface SettingsViewProps {
@@ -37,6 +38,7 @@ export default function SettingsView({
   const [monthlyIncome, setMonthlyIncome] = useState<number>(settings.monthlyIncome || 100000);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -59,15 +61,19 @@ export default function SettingsView({
     }
   };
 
-  const handleExportData = () => {
-    const jsonStr = exportAppData();
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `EquiNote_Backup_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleExportData = async () => {
+    try {
+      const jsonStr = exportAppData();
+      await downloadTextFile(
+        `EquiNote_Backup_${new Date().toISOString().split('T')[0]}.json`,
+        jsonStr,
+        'EquiNote Backup'
+      );
+      setExportStatus('Backup saved — check Documents / Share sheet on Android.');
+    } catch {
+      setExportStatus('Export failed. Please try again.');
+    }
+    setTimeout(() => setExportStatus(null), 5000);
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -228,6 +234,13 @@ export default function SettingsView({
           <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs flex items-center gap-2">
             <Check className="w-4 h-4" />
             <span>{importStatus}</span>
+          </div>
+        )}
+
+        {exportStatus && (
+          <div className="p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs flex items-center gap-2">
+            <Check className="w-4 h-4" />
+            <span>{exportStatus}</span>
           </div>
         )}
 
