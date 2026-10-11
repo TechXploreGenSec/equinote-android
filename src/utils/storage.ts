@@ -1,10 +1,12 @@
-import { LoanItem, PaymentRecord, UserSettings, AppNotification } from '../types';
+import { LoanItem, PaymentRecord, UserSettings, AppNotification, ReminderItem } from '../types';
 
 const STORAGE_KEYS = {
   LOANS: 'equinote_loans_v1',
   PAYMENTS: 'equinote_payments_v1',
   SETTINGS: 'equinote_settings_v1',
   NOTIFICATIONS: 'equinote_notifications_v1',
+  REMINDERS: 'equinote_reminders_v1',
+  MIGRATED_V3: 'equinote_migrated_v3',
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -15,138 +17,25 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notificationTime: '09:00',
   notificationsEnabled: true,
   soundEnabled: true,
-  userName: 'Sowndhar',
+  userName: '',
 };
 
-export const INITIAL_SAMPLE_LOANS: LoanItem[] = [
-  {
-    id: 'loan-1',
-    title: 'HDFC Home Loan',
-    lender: 'HDFC Bank',
-    category: 'home',
-    principal: 4200000,
-    interestRate: 8.4,
-    monthlyEmi: 36240,
-    dueDay: 5,
-    totalMonths: 240,
-    paidMonths: 42,
-    startDate: '2023-04-05',
-    accountNumber: 'HL-0988472911',
-    autoDebitBank: 'Salary Account (HDFC)',
-    notes: 'No foreclosure fee after 36 months. Tax exemption under Sec 24b and 80C applicable.',
-    isClosed: false,
-    lastPaidMonthYear: '2026-09',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'loan-2',
-    title: 'Creta SX Auto Loan',
-    lender: 'State Bank of India',
-    category: 'vehicle',
-    principal: 950000,
-    interestRate: 8.75,
-    monthlyEmi: 19602,
-    dueDay: 15,
-    totalMonths: 60,
-    paidMonths: 22,
-    startDate: '2024-12-15',
-    accountNumber: 'AL-SBI-558291',
-    autoDebitBank: 'SBI Savings Acc',
-    notes: 'Need Form 35 and NOC from branch upon final settlement for RTO hypothecation removal.',
-    isClosed: false,
-    lastPaidMonthYear: '2026-09',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'loan-3',
-    title: 'MacBook Pro M3 Max',
-    lender: 'Apple / ICICI CC',
-    category: 'gadget',
-    principal: 199900,
-    interestRate: 0,
-    monthlyEmi: 16658,
-    dueDay: 12,
-    totalMonths: 12,
-    paidMonths: 8,
-    startDate: '2026-02-12',
-    accountNumber: 'ICICI-CC-EMI-9102',
-    autoDebitBank: 'ICICI Credit Card Auto-Debit',
-    notes: 'Zero percent brand subvention EMI. Auto-billed to credit card statement.',
-    isClosed: false,
-    lastPaidMonthYear: '2026-09',
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: 'loan-4',
-    title: 'Amazon Pay Later BNPL',
-    lender: 'Axio / Amazon',
-    category: 'bnpl',
-    principal: 18000,
-    interestRate: 0,
-    monthlyEmi: 3000,
-    dueDay: 25,
-    totalMonths: 6,
-    paidMonths: 4,
-    startDate: '2026-06-25',
-    accountNumber: 'APL-8841029',
-    autoDebitBank: 'UPI AutoPay',
-    notes: 'Standing instruction via UPI ID.',
-    isClosed: false,
-    lastPaidMonthYear: '2026-09',
-    createdAt: new Date().toISOString(),
-  },
-];
+// v3: no sample / temp data. Fresh installs start empty.
+// Known demo ids shipped in v1/v2 — removed once via migrateV3SampleData().
+const LEGACY_SAMPLE_LOAN_IDS = ['loan-1', 'loan-2', 'loan-3', 'loan-4'];
+const LEGACY_SAMPLE_PAYMENT_IDS = ['pay-1', 'pay-2', 'pay-3'];
 
-export const INITIAL_SAMPLE_PAYMENTS: PaymentRecord[] = [
-  {
-    id: 'pay-1',
-    loanId: 'loan-1',
-    loanTitle: 'HDFC Home Loan',
-    amount: 36240,
-    paidDate: '2026-09-05',
-    monthYear: '2026-09',
-    installmentNumber: 42,
-    transactionRef: 'TXN-99482910',
-    paymentMode: 'Auto-Debit',
-    note: 'September EMI cleared on schedule',
-  },
-  {
-    id: 'pay-2',
-    loanId: 'loan-2',
-    loanTitle: 'Creta SX Auto Loan',
-    amount: 19602,
-    paidDate: '2026-09-15',
-    monthYear: '2026-09',
-    installmentNumber: 22,
-    transactionRef: 'NEFT-55102948',
-    paymentMode: 'Auto-Debit',
-    note: 'September auto loan installment',
-  },
-  {
-    id: 'pay-3',
-    loanId: 'loan-3',
-    loanTitle: 'MacBook Pro M3 Max',
-    amount: 16658,
-    paidDate: '2026-09-12',
-    monthYear: '2026-09',
-    installmentNumber: 8,
-    transactionRef: 'CC-STMT-0926',
-    paymentMode: 'Credit Card Bill',
-    note: 'Installment 8 of 12 paid',
-  },
-];
-
-// Helper to load or initialize
+// Helper to load or initialize (v3: starts empty, no sample data)
 export function loadLoans(): LoanItem[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.LOANS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(INITIAL_SAMPLE_LOANS));
-      return INITIAL_SAMPLE_LOANS;
+      localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify([]));
+      return [];
     }
     return JSON.parse(raw);
   } catch {
-    return INITIAL_SAMPLE_LOANS;
+    return [];
   }
 }
 
@@ -162,12 +51,12 @@ export function loadPayments(): PaymentRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
     if (!raw) {
-      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(INITIAL_SAMPLE_PAYMENTS));
-      return INITIAL_SAMPLE_PAYMENTS;
+      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify([]));
+      return [];
     }
     return JSON.parse(raw);
   } catch {
-    return INITIAL_SAMPLE_PAYMENTS;
+    return [];
   }
 }
 
@@ -216,6 +105,72 @@ export function saveNotifications(notifications: AppNotification[]) {
   } catch (e) {
     console.error('Failed to save notifications', e);
   }
+}
+
+/**
+ * v3 one-time migration: strip the v1/v2 bundled demo loans & payments
+ * (loan-1..4 / pay-1..3) while keeping anything the user added themselves.
+ */
+export function migrateV3SampleData(): { removedLoans: number; removedPayments: number } {
+  try {
+    if (localStorage.getItem(STORAGE_KEYS.MIGRATED_V3) === 'done') {
+      return { removedLoans: 0, removedPayments: 0 };
+    }
+    let removedLoans = 0;
+    let removedPayments = 0;
+    try {
+      const loans: LoanItem[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.LOANS) || '[]');
+      const kept = loans.filter((l) => !LEGACY_SAMPLE_LOAN_IDS.includes(l.id));
+      removedLoans = loans.length - kept.length;
+      localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(kept));
+    } catch {
+      /* ignore */
+    }
+    try {
+      const payments: PaymentRecord[] = JSON.parse(localStorage.getItem(STORAGE_KEYS.PAYMENTS) || '[]');
+      const kept = payments.filter((p) => !LEGACY_SAMPLE_PAYMENT_IDS.includes(p.id));
+      removedPayments = payments.length - kept.length;
+      localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(kept));
+    } catch {
+      /* ignore */
+    }
+    localStorage.setItem(STORAGE_KEYS.MIGRATED_V3, 'done');
+    return { removedLoans, removedPayments };
+  } catch {
+    return { removedLoans: 0, removedPayments: 0 };
+  }
+}
+
+// ---- One-time pay reminders (credit-card bills, friend borrows, etc.) ----
+
+export function loadReminders(): ReminderItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.REMINDERS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.REMINDERS, JSON.stringify([]));
+      return [];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveReminders(reminders: ReminderItem[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.REMINDERS, JSON.stringify(reminders));
+  } catch (e) {
+    console.error('Failed to save reminders', e);
+  }
+}
+
+export function currentMonthYear(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function nextMonthYear(date: Date = new Date()): string {
+  const d = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
 export interface DueCalculation {
@@ -331,4 +286,119 @@ export function exportPaymentsCsv(payments: PaymentRecord[]): string {
   ]);
 
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+}
+
+export const PAYMENTS_CSV_EXAMPLE = [
+  'Loan Title,Amount,Date,Month-Year,Installment #,Payment Mode,Reference ID,Notes',
+  '"HDFC Home Loan",36240,2026-10-05,2026-10,43,Auto-Debit,TXN-100231,October EMI cleared on schedule',
+  '"HDFC Home Loan",36240,2026-11-05,2026-11,44,Auto-Debit,TXN-100884,November EMI cleared on schedule',
+  '"SBI Credit Card Bill",18450,2026-10-12,2026-10,,Credit Card,CC-STMT-1026,Full statement paid',
+].join('\n');
+
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      out.push(cur.trim());
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+export interface CsvImportResult {
+  records: PaymentRecord[];
+  imported: number;
+  skipped: number;
+}
+
+/**
+ * Parse a bulk-upload CSV of payment records. Matches each row to an
+ * existing loan by Loan Title (case-insensitive) or loan id.
+ * Columns: Loan Title*, Amount*, Date*, Month-Year, Installment #,
+ * Payment Mode, Reference ID, Notes (*required).
+ */
+export function parsePaymentsCsv(csvText: string, loans: LoanItem[]): CsvImportResult {
+  const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length < 2) return { records: [], imported: 0, skipped: 0 };
+
+  const header = splitCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (names: string[]) => {
+    for (const n of names) {
+      const i = header.findIndex((h) => h === n);
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const iTitle = idx(['loan title', 'loan', 'title']);
+  const iAmount = idx(['amount', 'paid amount']);
+  const iDate = idx(['date', 'paid date', 'paiddate']);
+  const iMonth = idx(['month-year', 'month year', 'monthyear', 'month']);
+  const iInst = idx(['installment #', 'installment', 'installment no', 'inst']);
+  const iMode = idx(['payment mode', 'mode']);
+  const iRef = idx(['reference id', 'reference', 'transaction ref', 'utr', 'transaction id']);
+  const iNote = idx(['notes', 'note', 'remarks']);
+
+  const records: PaymentRecord[] = [];
+  let skipped = 0;
+
+  for (let r = 1; r < lines.length; r++) {
+    const cols = splitCsvLine(lines[r]);
+    const title = (iTitle >= 0 ? cols[iTitle] : '').trim();
+    const amount = Number(iAmount >= 0 ? cols[iAmount] : NaN);
+    const paidDate = (iDate >= 0 ? cols[iDate] : '').trim();
+    if (!title || !Number.isFinite(amount) || amount <= 0 || !paidDate) {
+      skipped++;
+      continue;
+    }
+    const loan = loans.find(
+      (l) => l.title.toLowerCase() === title.toLowerCase() || l.id.toLowerCase() === title.toLowerCase()
+    );
+    if (!loan) {
+      skipped++;
+      continue;
+    }
+    const d = new Date(paidDate);
+    const monthYear =
+      iMonth >= 0 && cols[iMonth]
+        ? cols[iMonth].trim()
+        : !Number.isNaN(d.getTime())
+          ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+          : currentMonthYear();
+    const installmentNumber =
+      iInst >= 0 && cols[iInst] ? Number(cols[iInst]) || loan.paidMonths + 1 : loan.paidMonths + 1;
+    records.push({
+      id: `pay-${Date.now()}-${r}`,
+      loanId: loan.id,
+      loanTitle: loan.title,
+      amount,
+      paidDate,
+      monthYear,
+      installmentNumber,
+      paymentMode: iMode >= 0 ? cols[iMode] || 'Manual' : 'Manual',
+      transactionRef: iRef >= 0 ? cols[iRef] || '' : '',
+      note: iNote >= 0 ? cols[iNote] || '' : '',
+    });
+  }
+
+  return { records, imported: records.length, skipped };
 }

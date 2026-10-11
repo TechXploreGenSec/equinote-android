@@ -34,6 +34,9 @@ export default function AddLoanModal({
   const [accountNumber, setAccountNumber] = useState('');
   const [autoDebitBank, setAutoDebitBank] = useState('');
   const [notes, setNotes] = useState('');
+  // Same-month post-due-date confirm (new loans only)
+  const [paidThisMonth, setPaidThisMonth] = useState<'yes' | 'no' | null>(null);
+  const [paidCountIncludesThisMonth, setPaidCountIncludesThisMonth] = useState<'yes' | 'no' | null>(null);
 
   // Total months based on unit
   const totalMonths = tenureUnit === 'years' ? tenureValue * 12 : tenureValue;
@@ -55,6 +58,8 @@ export default function AddLoanModal({
       setAccountNumber(initialLoan.accountNumber || '');
       setAutoDebitBank(initialLoan.autoDebitBank || '');
       setNotes(initialLoan.notes || '');
+      setPaidThisMonth(null);
+      setPaidCountIncludesThisMonth(null);
     } else {
       // Defaults for new loan
       setTitle('');
@@ -72,6 +77,8 @@ export default function AddLoanModal({
       setAccountNumber('');
       setAutoDebitBank('');
       setNotes('');
+      setPaidThisMonth(null);
+      setPaidCountIncludesThisMonth(null);
     }
   }, [initialLoan, isOpen]);
 
@@ -85,10 +92,36 @@ export default function AddLoanModal({
 
   if (!isOpen) return null;
 
+  const today = new Date();
+  const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  // New loan added after this month's due day: ask whether it is already paid.
+  const showPaidConfirm = !initialLoan && today.getDate() > dueDay;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !lender.trim() || principal <= 0 || totalMonths <= 0 || monthlyEmi <= 0) {
       return;
+    }
+    if (showPaidConfirm && !paidThisMonth) {
+      return;
+    }
+    if (showPaidConfirm && paidThisMonth === 'yes' && !paidCountIncludesThisMonth) {
+      return;
+    }
+
+    let finalPaidMonths = Number(paidMonths) || 0;
+    let lastPaidMonthYear: string | undefined = initialLoan?.lastPaidMonthYear;
+    if (showPaidConfirm) {
+      if (paidThisMonth === 'yes') {
+        // Mark this month paid WITHOUT double counting:
+        // bump the count only if the entered number doesn't include this month yet.
+        if (paidCountIncludesThisMonth === 'no') {
+          finalPaidMonths = Math.min(totalMonths, finalPaidMonths + 1);
+        }
+        lastPaidMonthYear = thisMonthStr;
+      } else {
+        lastPaidMonthYear = undefined;
+      }
     }
 
     onSave({
@@ -101,7 +134,8 @@ export default function AddLoanModal({
       monthlyEmi: Number(monthlyEmi),
       dueDay: Number(dueDay),
       totalMonths: Number(totalMonths),
-      paidMonths: Number(paidMonths),
+      paidMonths: finalPaidMonths,
+      lastPaidMonthYear,
       startDate: startDate || new Date().toISOString().split('T')[0],
       accountNumber: accountNumber.trim(),
       autoDebitBank: autoDebitBank.trim(),
@@ -374,6 +408,77 @@ export default function AddLoanModal({
               />
             </div>
           </div>
+
+          {/* Same-month post-due-date confirm */}
+          {showPaidConfirm && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-3">
+              <p className="text-xs text-amber-200 font-semibold">
+                This month's due day ({dueDay}th) has already passed. Is this month's
+                installment already paid?
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaidThisMonth('yes')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${
+                    paidThisMonth === 'yes'
+                      ? 'bg-emerald-500/20 border-emerald-500 text-white'
+                      : 'bg-slate-950 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  Yes, paid
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setPaidThisMonth('no'); setPaidCountIncludesThisMonth(null); }}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${
+                    paidThisMonth === 'no'
+                      ? 'bg-rose-500/20 border-rose-500 text-white'
+                      : 'bg-slate-950 border-slate-700 text-slate-300'
+                  }`}
+                >
+                  No, not yet
+                </button>
+              </div>
+
+              {paidThisMonth === 'yes' && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-xs text-slate-300 font-semibold">
+                    Does the "Already Paid Months" count you entered include this month's payment?
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaidCountIncludesThisMonth('yes')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition ${
+                        paidCountIncludesThisMonth === 'yes'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-white'
+                          : 'bg-slate-950 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      Yes, includes it
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaidCountIncludesThisMonth('no')}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition ${
+                        paidCountIncludesThisMonth === 'no'
+                          ? 'bg-emerald-500/20 border-emerald-500 text-white'
+                          : 'bg-slate-950 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      No, add +1
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    {paidCountIncludesThisMonth === 'no'
+                      ? 'We will add 1 to your count and mark this month paid.'
+                      : 'We will only mark this month paid — your count stays as entered.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Account Number & Auto-Debit Bank */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { 
-  X, Calendar, Landmark, Percent, Clock, 
-  Trash2, Edit3, ArrowRight, CheckCircle,
+import {
+  X, Calendar, Landmark, Percent, Clock,
+  Trash2, Edit3, CheckCircle,
   FileCheck2, CheckSquare, Square, FileText
 } from 'lucide-react';
 import { LoanItem, UserSettings, PaymentRecord } from '../types';
@@ -17,7 +17,6 @@ interface LoanDetailModalProps {
   onEdit: (loan: LoanItem) => void;
   onDelete: (loanId: string) => void;
   onToggleClose: (loan: LoanItem) => void;
-  onPrepaySimulate: (loan: LoanItem) => void;
   onOpenPayModal: (loan: LoanItem) => void;
   onExportPdf?: (loan: LoanItem) => void;
 }
@@ -30,7 +29,6 @@ export default function LoanDetailModal({
   onEdit,
   onDelete,
   onToggleClose,
-  onPrepaySimulate,
   onOpenPayModal,
   onExportPdf,
 }: LoanDetailModalProps) {
@@ -307,17 +305,6 @@ export default function LoanDetailModal({
                 <span>Export Loan Dossier (PDF)</span>
               </button>
             )}
-
-            <button
-              onClick={() => {
-                onClose();
-                onPrepaySimulate(loan);
-              }}
-              className="w-full py-3 px-4 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95"
-            >
-              <span>Simulate Prepayment Savings for this Loan</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
           </div>
         </div>
 

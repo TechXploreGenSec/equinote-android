@@ -4,7 +4,7 @@ import BottomNav, { TabType } from './components/BottomNav';
 import PwaInstallBanner from './components/PwaInstallBanner';
 import DashboardView from './components/DashboardView';
 import LoansView from './components/LoansView';
-import SimulatorView from './components/SimulatorView';
+import RemindersView from './components/RemindersView';
 import LedgerView from './components/LedgerView';
 import SettingsView from './components/SettingsView';
 import AddLoanModal from './components/AddLoanModal';
@@ -13,20 +13,29 @@ import PayModal from './components/PayModal';
 import NotificationsModal from './components/NotificationsModal';
 import PdfExportModal from './components/PdfExportModal';
 
-import { LoanItem, PaymentRecord, UserSettings } from './types';
-import { 
-  loadLoans, saveLoans, 
-  loadPayments, savePayments, 
-  loadSettings, saveSettings, 
-  calculateDueStatus 
+import { LoanItem, PaymentRecord, UserSettings, ReminderItem } from './types';
+import {
+  loadLoans, saveLoans,
+  loadPayments, savePayments,
+  loadSettings, saveSettings,
+  loadReminders, saveReminders,
+  migrateV3SampleData,
+  currentMonthYear,
+  calculateDueStatus
 } from './utils/storage';
 import { showSystemNotification, playChimeSound } from './utils/notifications';
+import { ensureNotificationPermission, scheduleDueReminders, getPermissionStatus } from './utils/nativeNotifications';
 
 export default function App() {
-  const [loans, setLoans] = useState<LoanItem[]>(() => loadLoans());
+  const [loans, setLoans] = useState<LoanItem[]>(() => {
+    migrateV3SampleData();
+    return loadLoans();
+  });
   const [payments, setPayments] = useState<PaymentRecord[]>(() => loadPayments());
+  const [reminders, setReminders] = useState<ReminderItem[]>(() => loadReminders());
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
+  const [notifPermission, setNotifPermission] = useState<string>('unknown');
 
   // Modals state
   const [isAddLoanOpen, setIsAddLoanOpen] = useState(false);
@@ -34,7 +43,6 @@ export default function App() {
   const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<LoanItem | null>(null);
   const [payingLoan, setPayingLoan] = useState<LoanItem | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [simulatorPreselectedLoan, setSimulatorPreselectedLoan] = useState<LoanItem | null>(null);
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [pdfSpecificLoanId, setPdfSpecificLoanId] = useState<string | undefined>(undefined);
 
@@ -62,6 +70,7 @@ export default function App() {
         dueDay: Number(loanData.dueDay) || 5,
         totalMonths: Number(loanData.totalMonths) || 12,
         paidMonths: Number(loanData.paidMonths) || 0,
+        lastPaidMonthYear: loanData.lastPaidMonthYear,
         startDate: loanData.startDate || new Date().toISOString().split('T')[0],
         accountNumber: loanData.accountNumber,
         autoDebitBank: loanData.autoDebitBank,
@@ -203,7 +212,65 @@ export default function App() {
   const handleReloadData = () => {
     setLoans(loadLoans());
     setPayments(loadPayments());
+    setReminders(loadReminders());
     setSettings(loadSettings());
+  };
+
+  // Bulk CSV import: merge payment records, then align each loan's progress
+  // to the highest imported installment (capped) and latest month.
+  const handleImportPayments = (records: PaymentRecord[]) => {
+    if (records.length === 0) return;
+    const updatedPayments = [...records, ...payments];
+    setPayments(updatedPayments);
+    savePayments(updatedPayments);
+
+    const updatedLoans = loans.map((loan) => {
+      const mine = records.filter((r) => r.loanId === loan.id);
+      if (mine.length === 0) return loan;
+      const maxInst = Math.min(
+        loan.totalMonths,
+        Math.max(loan.paidMonths, ...mine.map((r) => r.installmentNumber || 0))
+      );
+      const latestMonth = mine.map((r) => r.monthYear).sort().pop() || loan.lastPaidMonthYear;
+      const isCompleted = maxInst >= loan.totalMonths;
+      return {
+        ...loan,
+        paidMonths: maxInst,
+        lastPaidMonthYear:
+          latestMonth && (!loan.lastPaidMonthYear || latestMonth >= loan.lastPaidMonthYear)
+            ? latestMonth
+            : loan.lastPaidMonthYear,
+        isClosed: isCompleted ? true : loan.isClosed,
+      };
+    });
+    setLoans(updatedLoans);
+    saveLoans(updatedLoans);
+    playChimeSound('success');
+  };
+
+  const handleSaveReminder = (reminder: ReminderItem) => {
+    const updated = [reminder, ...reminders];
+    setReminders(updated);
+    saveReminders(updated);
+    playChimeSound('pop');
+  };
+
+  const handleDeleteReminder = (id: string) => {
+    const updated = reminders.filter((r) => r.id !== id);
+    setReminders(updated);
+    saveReminders(updated);
+  };
+
+  const handleToggleReminderDone = (id: string) => {
+    const monthStr = currentMonthYear();
+    const updated = reminders.map((r) =>
+      r.id === id
+        ? { ...r, doneMonthYear: r.doneMonthYear === monthStr ? undefined : monthStr }
+        : r
+    );
+    setReminders(updated);
+    saveReminders(updated);
+    playChimeSound('success');
   };
 
   // Due soon count for navigation badge
@@ -215,9 +282,46 @@ export default function App() {
     }).length;
   }, [loans]);
 
-  // Check for upcoming dues on launch and dispatch notification if enabled
+  const reminderCount = useMemo(() => {
+    const monthStr = currentMonthYear();
+    const todayStr = new Date().toISOString().split('T')[0];
+    return reminders.filter((r) => r.doneMonthYear !== monthStr && r.dueDate <= todayStr).length;
+  }, [reminders]);
+
+  const handleEnableNotifications = useCallback(async () => {
+    const granted = await ensureNotificationPermission();
+    setNotifPermission(await getPermissionStatus());
+    if (granted) {
+      handleUpdateSettings({ notificationsEnabled: true });
+      await scheduleDueReminders(loans, { ...settings, notificationsEnabled: true });
+      playChimeSound('success');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loans, settings]);
+
+  // First-run: ask notification permission once, then schedule native reminders.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (settings.notificationsEnabled) {
+        await ensureNotificationPermission();
+      }
+      if (!cancelled) {
+        setNotifPermission(await getPermissionStatus());
+        await scheduleDueReminders(loans, settings);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-schedule native reminders + web fallback alert whenever dues change.
   useEffect(() => {
     if (!settings.notificationsEnabled) return;
+    void scheduleDueReminders(loans, settings);
+    void getPermissionStatus().then(setNotifPermission);
 
     const overdueOrToday = loans.filter((l) => {
       if (l.isClosed) return false;
@@ -235,7 +339,7 @@ export default function App() {
         }
       );
     }
-  }, [settings.notificationsEnabled, loans, settings.currencySymbol]);
+  }, [settings.notificationsEnabled, loans, settings.currencySymbol, settings.notificationTime]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col antialiased selection:bg-emerald-500 selection:text-slate-950">
@@ -256,6 +360,9 @@ export default function App() {
           <DashboardView
             loans={loans}
             settings={settings}
+            reminders={reminders}
+            notifPermission={notifPermission}
+            onEnableNotifications={handleEnableNotifications}
             onOpenAddLoan={() => {
               setEditingLoan(null);
               setIsAddLoanOpen(true);
@@ -263,10 +370,7 @@ export default function App() {
             onOpenPayModal={(loan) => setPayingLoan(loan)}
             onSelectLoan={(loan) => setSelectedLoanForDetail(loan)}
             onGoToLoans={() => setCurrentTab('loans')}
-            onGoToSimulators={() => {
-              setSimulatorPreselectedLoan(null);
-              setCurrentTab('simulators');
-            }}
+            onGoToReminders={() => setCurrentTab('reminders')}
             onGoToSettings={() => setCurrentTab('settings')}
             onOpenPdfExport={() => handleOpenPdfModal()}
           />
@@ -286,11 +390,13 @@ export default function App() {
           />
         )}
 
-        {currentTab === 'simulators' && (
-          <SimulatorView
-            loans={loans}
+        {currentTab === 'reminders' && (
+          <RemindersView
+            reminders={reminders}
             settings={settings}
-            preselectedLoan={simulatorPreselectedLoan}
+            onSaveReminder={handleSaveReminder}
+            onDeleteReminder={handleDeleteReminder}
+            onToggleDone={handleToggleReminderDone}
           />
         )}
 
@@ -300,6 +406,7 @@ export default function App() {
             loans={loans}
             settings={settings}
             onDeletePayment={handleDeletePayment}
+            onImportPayments={handleImportPayments}
           />
         )}
 
@@ -319,6 +426,7 @@ export default function App() {
         currentTab={currentTab}
         onChangeTab={(tab) => setCurrentTab(tab)}
         dueSoonCount={dueSoonCount}
+        reminderCount={reminderCount}
       />
 
       {/* Modals & Dialogs */}
@@ -345,10 +453,6 @@ export default function App() {
         }}
         onDelete={handleDeleteLoan}
         onToggleClose={handleToggleCloseLoan}
-        onPrepaySimulate={(loan) => {
-          setSimulatorPreselectedLoan(loan);
-          setCurrentTab('simulators');
-        }}
         onOpenPayModal={(loan) => setPayingLoan(loan)}
         onExportPdf={(loan) => handleOpenPdfModal(loan.id)}
       />

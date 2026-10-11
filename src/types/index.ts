@@ -63,3 +63,22 @@ export interface AppNotification {
   timestamp: string;
   read: boolean;
 }
+
+export type ReminderKind = 'credit_card' | 'borrow' | 'other';
+
+/**
+ * One-time pay reminder (NOT a recurring EMI): e.g. full credit-card bill,
+ * money borrowed from a friend. Shows up as a "next month pay note" and
+ * can be marked done without touching any loan's paid-month count.
+ */
+export interface ReminderItem {
+  id: string;
+  title: string;
+  kind: ReminderKind;
+  amount?: number;
+  dueDate: string; // YYYY-MM-DD
+  note?: string;
+  person?: string; // friend name / card name
+  doneMonthYear?: string; // e.g. "2026-10" once marked paid
+  createdAt: string;
+}

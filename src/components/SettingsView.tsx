@@ -1,10 +1,10 @@
 import { useState, useRef } from 'react';
-import { 
-  Download, Upload, RefreshCw, Trash2, 
-  User, DollarSign, Bell, Shield, Check, AlertCircle, FileText 
+import {
+  Download, Upload, Trash2,
+  User, DollarSign, Bell, Shield, Check, FileText
 } from 'lucide-react';
 import { UserSettings } from '../types';
-import { exportAppData, importAppData, INITIAL_SAMPLE_LOANS, INITIAL_SAMPLE_PAYMENTS, DEFAULT_SETTINGS } from '../utils/storage';
+import { exportAppData, importAppData } from '../utils/storage';
 import { formatCurrency } from '../utils/finance';
 
 interface SettingsViewProps {
@@ -88,15 +88,6 @@ export default function SettingsView({
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleResetToSample = () => {
-    if (window.confirm('Reset all loans and data to standard professional sample portfolio?')) {
-      localStorage.setItem('equinote_loans_v1', JSON.stringify(INITIAL_SAMPLE_LOANS));
-      localStorage.setItem('equinote_payments_v1', JSON.stringify(INITIAL_SAMPLE_PAYMENTS));
-      localStorage.setItem('equinote_settings_v1', JSON.stringify(DEFAULT_SETTINGS));
-      onReloadData();
-    }
   };
 
   const handleClearAll = () => {
@@ -275,15 +266,7 @@ export default function SettingsView({
           />
         </div>
 
-        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-          <button
-            onClick={handleResetToSample}
-            className="text-slate-400 hover:text-white flex items-center gap-1"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Reload Professional Sample Data</span>
-          </button>
-
+        <div className="pt-2 border-t border-slate-800/80 flex items-center justify-end text-[11px]">
           <button
             onClick={handleClearAll}
             className="text-rose-400 hover:text-rose-300 flex items-center gap-1"

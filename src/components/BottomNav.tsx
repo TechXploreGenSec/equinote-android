@@ -1,17 +1,19 @@
-import { Radar, Landmark, Calculator, History, Settings } from 'lucide-react';
+import { Radar, Landmark, BellRing, History, Settings } from 'lucide-react';
 
-export type TabType = 'dashboard' | 'loans' | 'simulators' | 'ledger' | 'settings';
+export type TabType = 'dashboard' | 'loans' | 'reminders' | 'ledger' | 'settings';
 
 interface BottomNavProps {
   currentTab: TabType;
   onChangeTab: (tab: TabType) => void;
   dueSoonCount?: number;
+  reminderCount?: number;
 }
 
 export default function BottomNav({
   currentTab,
   onChangeTab,
   dueSoonCount = 0,
+  reminderCount = 0,
 }: BottomNavProps) {
   const tabs = [
     {
@@ -26,9 +28,10 @@ export default function BottomNav({
       icon: Landmark,
     },
     {
-      id: 'simulators' as TabType,
-      label: 'Calculators',
-      icon: Calculator,
+      id: 'reminders' as TabType,
+      label: 'Reminders',
+      icon: BellRing,
+      badge: reminderCount > 0 ? reminderCount : undefined,
     },
     {
       id: 'ledger' as TabType,

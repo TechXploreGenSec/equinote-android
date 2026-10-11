@@ -1,8 +1,9 @@
 # EquiNote — EMI & Loan Tracker (Android, Offline-First)
 
 Offline-first personal EMI and loan management companion with upcoming payment radar,
-prepayment simulator, smart notification reminders, and **PDF Extract & Statement export**
-(portfolio statement / single-loan dossier, landscape or portrait, with payment ledger).
+smart notification reminders, one-time pay notes, **PDF Extract & Statement export**
+(portfolio statement / single-loan dossier, landscape or portrait, with payment ledger),
+and CSV bulk upload for payment history.
 
 This repo wraps the EquiNote web app (React + Vite + Tailwind + PWA) in
 [Capacitor](https://capacitorjs.com/) so it runs as a **fully local Android app**.
@@ -46,6 +47,31 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.0 changelog
+
+- **Simulator removed** — prepayment simulator UI, engine (`simulatePrepayment`),
+  tab, and entry points deleted; Radar / Loans / Reminders / Ledger / Settings remain.
+- **Pay Reminders (new tab)** — one-time notes for credit-card bills and friend/family
+  borrows that are NOT EMIs: title, type, optional amount, pay-by date, person, note.
+  Mark done per month; pending notes count toward the next-month outlook.
+- **CSV bulk upload (Ledger)** — import payment history from CSV with an in-app
+  example format + downloadable `EquiNote_Payments_Example.csv`
+  (`Loan Title, Amount, Date, Month-Year, Installment #, Payment Mode, Reference ID, Notes`);
+  rows match existing loans by title, loan progress aligns to the highest installment.
+- **Notifications fixed** — `@capacitor/local-notifications`: first-run system
+  permission prompt, native scheduling of overdue / due-today / due-soon dues at the
+  user's reminder time, in-app "Enable" banner when permission is missing, live
+  permission status in the Notifications modal (web Notification API kept as fallback).
+- **Smarter Add-Loan** — adding a loan after this month's due day asks whether this
+  month is already paid, and whether the entered paid-month count includes it;
+  "No, add +1" bumps the count, otherwise the month is just marked paid (no double count).
+- **Next-month outlook (Radar)** — when everything is paid this month, a card shows
+  the next due date and next month's total (EMIs + pending notes); paid rows show
+  "Next: date · amount".
+- **Clean start** — bundled demo loans/payments removed; v1/v2 demo entries
+  (`loan-1..4`, `pay-1..3`) are migrated away once on existing devices. Fresh
+  installs start empty.
+
 ## v2.0.0 changelog
 
 - **PDF Extract & Statement** (`PdfExportModal` + `pdfGenerator` with `jspdf`):
@@ -87,7 +113,7 @@ git push origin main --tags
 
 ```
 index.html
-src/                 # React app (Dashboard, Loans, Simulator, Ledger, Settings, PdfExportModal, …)
+src/                 # React app (Dashboard, Loans, Reminders, Ledger, Settings, PdfExportModal, …)
 src/utils/capacitorPdf.ts  # native Android PDF save (Documents + Share sheet)
 public/              # PWA icons (v2: emerald ₹ emblem)
 assets/              # icon.png + splash.png → native launcher via capacitor-assets

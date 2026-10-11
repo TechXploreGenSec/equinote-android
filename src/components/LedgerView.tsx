@@ -1,17 +1,18 @@
-import { useState, useMemo } from 'react';
-import { 
-  Download, Search, Trash2, Calendar, 
-  CreditCard, CheckCircle2, ArrowDownLeft 
+import { useState, useMemo, useRef } from 'react';
+import {
+  Download, Search, Trash2, Calendar,
+  CreditCard, CheckCircle2, ArrowDownLeft, Upload, FileSpreadsheet
 } from 'lucide-react';
 import { PaymentRecord, UserSettings, LoanItem } from '../types';
 import { formatCurrency } from '../utils/finance';
-import { exportPaymentsCsv } from '../utils/storage';
+import { exportPaymentsCsv, parsePaymentsCsv, PAYMENTS_CSV_EXAMPLE } from '../utils/storage';
 
 interface LedgerViewProps {
   payments: PaymentRecord[];
   loans: LoanItem[];
   settings: UserSettings;
   onDeletePayment: (paymentId: string) => void;
+  onImportPayments: (records: PaymentRecord[]) => void;
 }
 
 export default function LedgerView({
@@ -19,9 +20,12 @@ export default function LedgerView({
   loans,
   settings,
   onDeletePayment,
+  onImportPayments,
 }: LedgerViewProps) {
   const [search, setSearch] = useState('');
   const [selectedLoanFilter, setSelectedLoanFilter] = useState<string>('all');
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const filteredPayments = useMemo(() => {
     return payments
@@ -61,6 +65,39 @@ export default function LedgerView({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadExampleCsv = () => {
+    const blob = new Blob([PAYMENTS_CSV_EXAMPLE], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'EquiNote_Payments_Example.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const { records, imported, skipped } = parsePaymentsCsv(content, loans);
+      if (imported > 0) {
+        onImportPayments(records);
+        setImportStatus(
+          `Imported ${imported} payment${imported > 1 ? 's' : ''}` +
+          (skipped > 0 ? `, skipped ${skipped} (unknown loan or bad row)` : '') +
+          '. Loan progress aligned to highest installment.'
+        );
+      } else {
+        setImportStatus('No rows imported. Check the example CSV format and loan titles.');
+      }
+      setTimeout(() => setImportStatus(null), 6000);
+    };
+    reader.readAsText(file);
+    if (csvInputRef.current) csvInputRef.current.value = '';
+  };
+
   return (
     <div className="space-y-4 px-4 pb-28 pt-2 max-w-2xl mx-auto">
       {/* Top Header */}
@@ -74,14 +111,59 @@ export default function LedgerView({
           </p>
         </div>
 
-        <button
-          onClick={handleDownloadCsv}
-          disabled={payments.length === 0}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 font-semibold transition active:scale-95 disabled:opacity-50"
-        >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export CSV</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => csvInputRef.current?.click()}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-xs text-emerald-300 font-semibold transition active:scale-95"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Bulk Upload CSV</span>
+          </button>
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv"
+            onChange={handleImportCsvFile}
+            className="hidden"
+          />
+
+          <button
+            onClick={handleDownloadCsv}
+            disabled={payments.length === 0}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 font-semibold transition active:scale-95 disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
+
+      {/* CSV format help + example */}
+      <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+            Bulk upload format
+          </span>
+          <button
+            onClick={handleDownloadExampleCsv}
+            className="text-[11px] font-bold text-emerald-400 hover:underline"
+          >
+            Download example CSV
+          </button>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed">
+          Columns: <span className="font-mono text-slate-300">Loan Title, Amount, Date, Month-Year, Installment #, Payment Mode, Reference ID, Notes</span>.
+          Loan Title must match an existing loan. Dates as <span className="font-mono">YYYY-MM-DD</span>.
+        </p>
+        <pre className="text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-2.5 overflow-x-auto whitespace-pre">
+{PAYMENTS_CSV_EXAMPLE}
+        </pre>
+        {importStatus && (
+          <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
+            {importStatus}
+          </div>
+        )}
       </div>
 
       {/* Aggregate Cards */}

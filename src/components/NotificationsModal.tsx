@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   X, Bell, BellRing, CheckCircle, AlertTriangle, 
   Clock, Volume2, VolumeX, Smartphone 
@@ -31,6 +31,14 @@ export default function NotificationsModal({
   const [permissionStatus, setPermissionStatus] = useState(getNotificationPermissionStatus());
   const [testSent, setTestSent] = useState(false);
 
+  // Refresh live permission status every time the modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setPermissionStatus(getNotificationPermissionStatus());
+      setTestSent(false);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   // Gather active alerts from loans
@@ -59,8 +67,11 @@ export default function NotificationsModal({
   const handleSendTestNotification = () => {
     setTestSent(true);
     playChimeSound('alert');
+    const firstDue = loans.find((l) => !l.isClosed);
     showSystemNotification('EquiNote EMI Reminder Test 🔔', {
-      body: 'Your MacBook Pro M3 EMI of ₹16,658 is due tomorrow. Ensure sufficient balance.',
+      body: firstDue
+        ? `Your ${firstDue.title} EMI of ${settings.currencySymbol}${firstDue.monthlyEmi} reminder channel works. Dues appear here before the due date.`
+        : 'Reminder channel works. Add a loan and dues will appear here before the due date.',
     });
     setTimeout(() => setTestSent(false), 3000);
   };

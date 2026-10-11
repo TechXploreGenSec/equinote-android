@@ -1,21 +1,24 @@
 import { useMemo } from 'react';
-import { 
-  Calendar, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, 
-  Plus, Check, ChevronRight, TrendingDown, FileText
+import {
+  Calendar, CheckCircle2, Clock, ArrowUpRight,
+  Plus, Check, ChevronRight, TrendingDown, FileText, BellRing, BellOff
 } from 'lucide-react';
-import { LoanItem, UserSettings } from '../types';
-import { calculateDueStatus } from '../utils/storage';
+import { LoanItem, ReminderItem, UserSettings } from '../types';
+import { calculateDueStatus, currentMonthYear, nextMonthYear } from '../utils/storage';
 import { formatCurrency, calculateRemainingBalance } from '../utils/finance';
 import { CATEGORIES } from '../utils/categories';
 
 interface DashboardViewProps {
   loans: LoanItem[];
   settings: UserSettings;
+  reminders: ReminderItem[];
+  notifPermission: string;
+  onEnableNotifications: () => void;
   onOpenAddLoan: () => void;
   onOpenPayModal: (loan: LoanItem) => void;
   onSelectLoan: (loan: LoanItem) => void;
   onGoToLoans: () => void;
-  onGoToSimulators: () => void;
+  onGoToReminders: () => void;
   onGoToSettings: () => void;
   onOpenPdfExport: () => void;
 }
@@ -23,11 +26,14 @@ interface DashboardViewProps {
 export default function DashboardView({
   loans,
   settings,
+  reminders,
+  notifPermission,
+  onEnableNotifications,
   onOpenAddLoan,
   onOpenPayModal,
   onSelectLoan,
   onGoToLoans,
-  onGoToSimulators,
+  onGoToReminders,
   onGoToSettings,
   onOpenPdfExport,
 }: DashboardViewProps) {
@@ -113,6 +119,37 @@ export default function DashboardView({
     return sortedUpcomingLoans.find((item) => item.dueInfo.status !== 'paid_this_month') || sortedUpcomingLoans[0];
   }, [sortedUpcomingLoans]);
 
+  // Next-month outlook: when everything is paid this month, show the next
+  // due date and how much next month will be (EMIs + pending pay notes).
+  const nextMonthOutlook = useMemo(() => {
+    if (activeLoans.length === 0) return null;
+    const allPaid = activeLoans.every((l) => l.lastPaidMonthYear === currentMonthYearStr);
+    if (!allPaid) return null;
+    const nextDates = activeLoans.map((l) => calculateDueStatus(l).dueDate.getTime());
+    const earliest = new Date(Math.min(...nextDates));
+    const emiTotal = activeLoans.reduce((sum, l) => sum + l.monthlyEmi, 0);
+    const nextMy = nextMonthYear();
+    const reminderTotal = reminders
+      .filter((r) => r.doneMonthYear !== currentMonthYearStr && r.dueDate.startsWith(nextMy))
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    return {
+      dateStr: earliest.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      total: emiTotal + reminderTotal,
+      emiTotal,
+      reminderTotal,
+    };
+  }, [activeLoans, currentMonthYearStr, reminders]);
+
+  // Pending one-time pay notes (not done this month)
+  const pendingReminders = useMemo(() => {
+    return reminders
+      .filter((r) => r.doneMonthYear !== currentMonthYearStr)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [reminders, currentMonthYearStr]);
+
+  const showNotifBanner =
+    settings.notificationsEnabled && notifPermission !== 'granted' && notifPermission !== 'unsupported';
+
   return (
     <div className="space-y-5 px-4 pb-28 pt-2 max-w-2xl mx-auto">
       {/* Top Greeting & Month */}
@@ -145,6 +182,24 @@ export default function DashboardView({
           </button>
         </div>
       </div>
+
+      {/* Notification permission banner (first-run ask) */}
+      {showNotifBanner && (
+        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3.5 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <BellOff className="w-5 h-5 text-amber-400 shrink-0" />
+            <p className="text-xs text-amber-200">
+              Reminders are off — allow notifications to get due alerts even when the app is closed.
+            </p>
+          </div>
+          <button
+            onClick={onEnableNotifications}
+            className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition shrink-0 active:scale-95"
+          >
+            Enable
+          </button>
+        </div>
+      )}
 
       {/* Monthly Outflow Summary Card */}
       <div className="rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900/90 to-slate-950 border border-slate-800/90 p-5 shadow-xl relative overflow-hidden">
@@ -336,13 +391,13 @@ export default function DashboardView({
 
         {/* Total Outstanding Debt Card */}
         <div
-          onClick={onGoToSimulators}
+          onClick={onGoToLoans}
           className="rounded-2xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 p-4 transition cursor-pointer group"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Total Outstanding</span>
             <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-0.5 group-hover:underline">
-              <span>Simulate Payoff</span>
+              <span>View loans</span>
               <ArrowUpRight className="w-3.5 h-3.5" />
             </span>
           </div>
@@ -355,12 +410,63 @@ export default function DashboardView({
             <TrendingDown className="w-3.5 h-3.5 text-emerald-400" />
             <span>Principal remaining across {activeLoans.length} loans</span>
           </p>
-
-          <div className="mt-2 text-[11px] text-slate-500">
-            Tip: Prepay ₹50k to save months of interest
-          </div>
         </div>
       </div>
+
+      {/* Next-month outlook — shown once everything is paid this month */}
+      {nextMonthOutlook && (
+        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              All clear this month
+            </p>
+            <p className="text-sm font-bold text-white mt-1">
+              Next due {nextMonthOutlook.dateStr}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {nextMonthOutlook.reminderTotal > 0
+                ? `EMIs ${formatCurrency(nextMonthOutlook.emiTotal, settings.currencySymbol)} + notes ${formatCurrency(nextMonthOutlook.reminderTotal, settings.currencySymbol)}`
+                : 'Same EMIs repeat next month'}
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            <span className="text-[11px] text-slate-400">Next month</span>
+            <div className="text-xl font-extrabold text-emerald-400 font-mono">
+              {formatCurrency(nextMonthOutlook.total, settings.currencySymbol)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* One-time pay notes strip */}
+      {pendingReminders.length > 0 && (
+        <div
+          onClick={onGoToReminders}
+          className="rounded-2xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 p-4 transition cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
+              <BellRing className="w-3.5 h-3.5 text-amber-400" />
+              Pay notes due ({pendingReminders.length})
+            </span>
+            <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-0.5">
+              <span>Open</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          </div>
+          <div className="mt-2 space-y-1">
+            {pendingReminders.slice(0, 3).map((r) => (
+              <div key={r.id} className="flex items-center justify-between text-xs">
+                <span className="text-slate-200 font-semibold truncate">{r.title}</span>
+                <span className="text-slate-400 shrink-0 ml-2">
+                  {r.amount ? formatCurrency(r.amount, settings.currencySymbol) : ''} · {r.dueDate}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Due Date Radar List for this month */}
       <div className="space-y-2">
@@ -416,13 +522,17 @@ export default function DashboardView({
                       <span>{loan.lender}</span>
                       <span aria-hidden="true">·</span>
                       <span className={
-                        dueInfo.status === 'overdue'
+                        isPaid
+                          ? 'text-emerald-400 font-semibold'
+                          : dueInfo.status === 'overdue'
                           ? 'text-rose-400 font-semibold'
                           : dueInfo.status === 'due_today'
                           ? 'text-amber-300 font-semibold'
                           : 'text-slate-400'
                       }>
-                        {dueInfo.statusText}
+                        {isPaid
+                          ? `Next: ${dueInfo.dueDateString} · ${formatCurrency(loan.monthlyEmi, settings.currencySymbol)}`
+                          : dueInfo.statusText}
                       </span>
                     </div>
                   </div>

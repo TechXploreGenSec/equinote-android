@@ -1,0 +1,4 @@
+Loan Title,Amount,Date,Month-Year,Installment #,Payment Mode,Reference ID,Notes
+"HDFC Home Loan",36240,2026-10-05,2026-10,43,Auto-Debit,TXN-100231,October EMI cleared on schedule
+"HDFC Home Loan",36240,2026-11-05,2026-11,44,Auto-Debit,TXN-100884,November EMI cleared on schedule
+"SBI Credit Card Bill",18450,2026-10-12,2026-10,,Credit Card,CC-STMT-1026,Full statement paid
