@@ -47,6 +47,15 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.5 changelog (readability + backup)
+
+- **Next-month card rebuilt for readability** — dark slate card, gold border +
+  gold pill badge + gold total (white supporting text). Same special-attention
+  identity, none of the washed-out bright-background text.
+- **JSON backup carries pay notes** — export now includes `reminders` alongside
+  loans, payments and settings (backup version 2.0); restore brings them back.
+  Older backups without reminders still restore fine.
+
 ## v3.0.4 changelog (feedback + attention fixes)
 
 - **No more silent failures** — Enable-notifications, PDF save/share, and every

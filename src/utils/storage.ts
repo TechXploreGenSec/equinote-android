@@ -243,10 +243,11 @@ export function calculateDueStatus(loan: LoanItem, referenceDate: Date = new Dat
 // Export and Import JSON
 export function exportAppData(): string {
   const data = {
-    version: '1.0',
+    version: '2.0',
     exportDate: new Date().toISOString(),
     loans: loadLoans(),
     payments: loadPayments(),
+    reminders: loadReminders(),
     settings: loadSettings(),
   };
   return JSON.stringify(data, null, 2);
@@ -260,6 +261,9 @@ export function importAppData(jsonString: string): boolean {
     }
     if (Array.isArray(parsed.payments)) {
       savePayments(parsed.payments);
+    }
+    if (Array.isArray(parsed.reminders)) {
+      saveReminders(parsed.reminders);
     }
     if (parsed.settings) {
       saveSettings(parsed.settings);

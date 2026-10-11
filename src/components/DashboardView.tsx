@@ -423,29 +423,29 @@ export default function DashboardView({
       </div>
 
       {/* Next-month outlook — shown once everything is paid this month.
-          Special-attention gold design, deliberately different from the
-          emerald monthly cards. */}
+          High-contrast dark card with gold accents: distinct from the
+          emerald monthly cards, readable in all light. */}
       {nextMonthOutlook && (
-        <div className="rounded-3xl bg-gradient-to-br from-amber-300 via-amber-400 to-orange-400 p-[1.5px] shadow-xl shadow-amber-950/40">
-          <div className="rounded-3xl bg-gradient-to-br from-amber-300 via-amber-400 to-orange-400 p-4 flex items-center justify-between gap-3 relative overflow-hidden">
-            <div className="absolute -left-10 -bottom-14 w-44 h-44 bg-white/25 rounded-full blur-2xl pointer-events-none" />
-            <div className="relative z-10">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-amber-950 bg-slate-950/85 text-amber-300 px-2.5 py-1 rounded-full">
+        <div className="rounded-3xl bg-slate-900 border-2 border-amber-400/80 p-5 shadow-xl shadow-amber-950/40 relative overflow-hidden">
+          <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
+          <div className="flex items-start justify-between gap-3 relative z-10">
+            <div>
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest bg-amber-400 text-slate-950 px-2.5 py-1 rounded-full">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Next month · plan ahead
               </span>
-              <p className="text-base font-extrabold text-amber-950 mt-2">
+              <p className="text-lg font-extrabold text-white mt-2">
                 Due {nextMonthOutlook.dateStr}
               </p>
-              <p className="text-[11px] font-semibold text-amber-900/80 mt-0.5">
+              <p className="text-xs text-slate-300 mt-0.5">
                 {nextMonthOutlook.reminderTotal > 0
                   ? `EMIs ${formatCurrency(nextMonthOutlook.emiTotal, settings.currencySymbol)} + notes ${formatCurrency(nextMonthOutlook.reminderTotal, settings.currencySymbol)}`
                   : 'Same EMIs repeat next month'}
               </p>
             </div>
-            <div className="text-right shrink-0 relative z-10 bg-slate-950/85 rounded-2xl px-4 py-3">
+            <div className="text-right shrink-0 bg-slate-950 border border-amber-400/40 rounded-2xl px-4 py-3">
               <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">Total</span>
-              <div className="text-2xl font-extrabold text-white font-mono">
+              <div className="text-2xl font-extrabold text-amber-300 font-mono">
                 {formatCurrency(nextMonthOutlook.total, settings.currencySymbol)}
               </div>
             </div>
