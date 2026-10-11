@@ -56,10 +56,36 @@ export interface SpendCandidate {
 }
 
 const AMOUNT_RE = /(?:rs\.?|inr|₹)\s?([\d,]+(?:\.\d{1,2})?)/gi;
-const DEBIT_RE = /debited|debit\b|spent|paid|withdrawn|withdrawal|purchase|charged|transferred/i;
-const CREDIT_RE = /credited|credit\b|received|refund|cashback|deposited/i;
+const DEBIT_RE = /debited|debit\b|\bdr\.?\b|spent|paid|withdrawn|withdrawal|purchase|charged|transferred/i;
+const CREDIT_RE = /credited|credit\b|\bcr\.?\b|received|refund|cashback|deposited/i;
+const OTP_RE = /\botp\b|one[\s-]?time[\s-]?password|verification code/i;
 const ACCOUNT_RE = /(?:a\/c|ac\b|account|acct|card|xx|x{2,}|ending|no\.?)\s?[^\d]{0,8}(\d{4})/i;
-const MERCHANT_RE = /(?:\bat\b|\btowards\b|\bto\b)\s+([A-Za-z0-9 .&'_-]{2,32}?)(?:\s+on\s|\s+dated|\s+for\s|,\s*|\s*\.|\s*$)/i;
+
+/** Payee after to/at/towards — first ~3 words, e.g. "to Mr V GOKUL P:" -> "Mr V GOKUL". */
+const TO_AT_RE = /\b(?:to|at|towards)\s+([A-Za-z][A-Za-z0-9 .&'_-]{1,48})/i;
+const PAYEE_STOPS = [' on ', ' dated', ' for ', ' via ', ' upi', ' utr', ' ref', ' rr', ' with ', ' using ', ' from '];
+
+export function extractPayee(body: string): string | undefined {
+  const flat = body.replace(/\s+/g, ' ');
+  TO_AT_RE.lastIndex = 0;
+  const m = TO_AT_RE.exec(flat);
+  if (!m) return undefined;
+  let chunk = m[1];
+  const punct = chunk.search(/[:;,.]/);
+  if (punct >= 0) chunk = chunk.slice(0, punct);
+  const low = ` ${chunk.toLowerCase()} `;
+  for (const stop of PAYEE_STOPS) {
+    const i = low.indexOf(stop);
+    if (i > 1) {
+      chunk = chunk.slice(0, i - 1);
+      break;
+    }
+  }
+  const words = chunk.trim().split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w));
+  if (words.length === 0) return undefined;
+  const name = words.slice(0, 3).join(' ');
+  return name.length >= 2 ? name : undefined;
+}
 
 function parseAmount(raw: string): number {
   return Number(raw.replace(/,/g, ''));
@@ -95,6 +121,10 @@ function pickAmount(body: string): number {
 /** Parse one bank/UPI SMS into a spend candidate. Pure string logic, on-device. */
 export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
   const body = msg.body || '';
+  // OTP / verification codes are never spends.
+  OTP_RE.lastIndex = 0;
+  if (OTP_RE.test(body)) return null;
+
   const amount = pickAmount(body);
   if (!amount) return null;
 
@@ -107,7 +137,7 @@ export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
     hasDebit && !hasCredit ? 'debit' : !hasDebit && hasCredit ? 'credit' : hasDebit ? 'debit' : 'unknown';
 
   const acc = ACCOUNT_RE.exec(body);
-  const merch = MERCHANT_RE.exec(body.replace(/\s+/g, ' '));
+  const merch = extractPayee(body);
   const d = new Date(msg.date);
   const dateStr = Number.isNaN(d.getTime())
     ? new Date().toISOString().split('T')[0]
@@ -118,7 +148,7 @@ export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
     amount,
     direction,
     accountLast4: acc ? acc[1] : undefined,
-    merchant: merch ? merch[1].trim() : undefined,
+    merchant: merch || undefined,
     sender: msg.address || 'SMS',
     date: dateStr,
     body,

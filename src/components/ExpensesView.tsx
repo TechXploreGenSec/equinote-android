@@ -232,7 +232,7 @@ export default function ExpensesView({
         `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''}` +
         (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
         (skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : '') +
-        '. Confirm each new spend below — names are kept exactly as the SMS mentions them.' +
+        '. Confirm each new spend below — names are kept exactly as the SMS mentions them, reason optional.' +
         (!filtered ? ' Tip: add sender IDs in My accounts to filter only your banks.' : '')
       );
     } catch (err) {
@@ -244,15 +244,12 @@ export default function ExpensesView({
 
   const handleImportSms = () => {
     const chosen = smsRows.filter((r) => r.selected);
-    const missingReason = chosen.filter((r) => r.reason.trim().length < 2);
     if (chosen.length === 0) {
       setSmsStatus('Select at least one spending to import.');
       return;
     }
-    if (missingReason.length > 0) {
-      setSmsStatus(`Add a reason for ${missingReason.length} selected item${missingReason.length > 1 ? 's' : ''} first — every spend needs a why.`);
-      return;
-    }
+    // Bulk 45-day import: reason is optional — fall back to the SMS source
+    // so history imports never get blocked. Manual adds still require it.
     const items: ExpenseItem[] = chosen.map((r) => ({
       id: `exp-${Date.now()}-${r.smsId}`,
       title: r.title.trim() || suggestExpenseTitle(r),
@@ -260,7 +257,7 @@ export default function ExpensesView({
       date: r.date,
       category: 'other' as ExpenseCategory,
       accountId: r.accountId || undefined,
-      reason: r.reason.trim(),
+      reason: r.reason.trim() || `From SMS (${r.sender})`,
       smsId: r.smsId,
       createdAt: new Date().toISOString(),
     }));
@@ -617,8 +614,8 @@ export default function ExpensesView({
                     <input
                       type="text" value={r.reason}
                       onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
-                      placeholder="Reason * (required)"
-                      className="bg-slate-900 border border-emerald-500/40 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+                      placeholder="Reason (optional for past imports)"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                     />
                     <select
                       value={r.accountId}

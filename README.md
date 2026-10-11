@@ -53,6 +53,15 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.1.0-beta.3 changelog (SMS format hardening)
+
+- **More bank formats** — `Dr.`/`Cr.` direction markers, payee names after
+  `to`/`at`/`towards` (first words, e.g. `to Mr V GOKUL P:` → `Mr V GOKUL`),
+  and OTP/verification messages are skipped instead of listed as spends.
+- **Reason only where it matters** — bulk 45-day SMS imports no longer block
+  on missing reasons (auto-notes the SMS source); manual new spends still
+  require one.
+
 ## v3.1.0-beta.2 changelog (your-banks SMS filter)
 
 - **SMS scan shows only your banks** — accounts now carry bank name, last-4
