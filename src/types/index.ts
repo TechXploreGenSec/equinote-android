@@ -65,7 +65,6 @@ export interface AppNotification {
 }
 
 export type ReminderKind = 'credit_card' | 'borrow' | 'other';
-
 /**
  * One-time pay reminder (NOT a recurring EMI): e.g. full credit-card bill,
  * money borrowed from a friend. Shows up as a "next month pay note" and
@@ -80,5 +79,38 @@ export interface ReminderItem {
   note?: string;
   person?: string; // friend name / card name
   doneMonthYear?: string; // e.g. "2026-10" once marked paid
+  createdAt: string;
+}
+
+export type ExpenseAccountKind = 'cash' | 'bank' | 'card' | 'wallet';
+
+export interface ExpenseAccount {
+  id: string;
+  name: string;
+  kind: ExpenseAccountKind;
+  /** Optional balance; when set, the app shows spent + remaining. */
+  balance?: number;
+  createdAt: string;
+}
+
+export type ExpenseCategory =
+  | 'food'
+  | 'travel'
+  | 'shopping'
+  | 'bills'
+  | 'health'
+  | 'fun'
+  | 'other';
+
+/** Daily spend record. Reason is mandatory — every outflow needs a why. */
+export interface ExpenseItem {
+  id: string;
+  title: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  category: ExpenseCategory;
+  accountId?: string;
+  reason: string;
+  smsId?: string; // android inbox id, to skip re-imports
   createdAt: string;
 }

@@ -1,4 +1,4 @@
-import { LoanItem, LoanCategory, PaymentRecord, UserSettings, AppNotification, ReminderItem } from '../types';
+import { LoanItem, LoanCategory, PaymentRecord, UserSettings, AppNotification, ReminderItem, ExpenseAccount, ExpenseItem } from '../types';
 import { calculateEmi, calculatePrincipalFromEmi } from './finance';
 
 const STORAGE_KEYS = {
@@ -7,6 +7,9 @@ const STORAGE_KEYS = {
   SETTINGS: 'equinote_settings_v1',
   NOTIFICATIONS: 'equinote_notifications_v1',
   REMINDERS: 'equinote_reminders_v1',
+  ACCOUNTS: 'equinote_accounts_v1',
+  EXPENSES: 'equinote_expenses_v1',
+  IMPORTED_SMS: 'equinote_sms_imported_v1',
   MIGRATED_V3: 'equinote_migrated_v3',
 };
 
@@ -174,6 +177,66 @@ export function nextMonthYear(date: Date = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// ---- Expense accounts & daily spends ----
+
+export function loadAccounts(): ExpenseAccount[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify([]));
+      return [];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveAccounts(accounts: ExpenseAccount[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
+  } catch (e) {
+    console.error('Failed to save accounts', e);
+  }
+}
+
+export function loadExpenses(): ExpenseItem[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify([]));
+      return [];
+    }
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+export function saveExpenses(expenses: ExpenseItem[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+  } catch (e) {
+    console.error('Failed to save expenses', e);
+  }
+}
+
+export function loadImportedSmsIds(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEYS.IMPORTED_SMS) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+export function saveImportedSmsIds(ids: string[]) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.IMPORTED_SMS, JSON.stringify(ids));
+  } catch (e) {
+    console.error('Failed to save imported SMS ids', e);
+  }
+}
+
 export interface DueCalculation {
   dueDate: Date;
   dueDateString: string;
@@ -243,11 +306,13 @@ export function calculateDueStatus(loan: LoanItem, referenceDate: Date = new Dat
 // Export and Import JSON
 export function exportAppData(): string {
   const data = {
-    version: '2.0',
+    version: '3.0',
     exportDate: new Date().toISOString(),
     loans: loadLoans(),
     payments: loadPayments(),
     reminders: loadReminders(),
+    accounts: loadAccounts(),
+    expenses: loadExpenses(),
     settings: loadSettings(),
   };
   return JSON.stringify(data, null, 2);
@@ -264,6 +329,12 @@ export function importAppData(jsonString: string): boolean {
     }
     if (Array.isArray(parsed.reminders)) {
       saveReminders(parsed.reminders);
+    }
+    if (Array.isArray(parsed.accounts)) {
+      saveAccounts(parsed.accounts);
+    }
+    if (Array.isArray(parsed.expenses)) {
+      saveExpenses(parsed.expenses);
     }
     if (parsed.settings) {
       saveSettings(parsed.settings);

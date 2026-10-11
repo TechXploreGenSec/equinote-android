@@ -3,6 +3,8 @@
 > ✅ **Stable version: v3.0.5** — [download the stable APK](../../releases/tag/v3.0.5).
 > The `stable` branch and `stable` tag are pinned to v3.0.5 and never move
 > except for a deliberate stable release.
+> 🧪 **Beta line: v3.1.0-beta.x** — daily spends + SMS scan, published as
+> pre-releases so Latest/stable never moves.
 
 Offline-first personal EMI and loan management companion with upcoming payment radar,
 smart notification reminders, one-time pay notes, **PDF Extract & Statement export**
@@ -50,6 +52,19 @@ npx cap sync
 cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## v3.1.0-beta.1 changelog (daily spends beta)
+
+- **Daily expenses tab (Spends)** — record everyday outflows with a mandatory
+  reason, category, date and source account; today/month totals, category
+  breakdown, per-account outflow + remaining balance.
+- **Accounts** — cash / bank / card / wallet accounts with optional balances;
+  every spend debits an account so outflows are tracked per account.
+- **Auto SMS read (on-device)** — new `SmsReader` native plugin (`READ_SMS`,
+  inbox only, nothing leaves the phone) + "Scan SMS" review screen: debit
+  candidates with merchant/account/last-4 detection, per-row reason input
+  (required), duplicate skipping, credit SMS ignored.
+- **Backup v3** — JSON export/restore now also carries accounts + expenses.
 
 ## v3.0.5 changelog (readability + backup)
 

@@ -5,6 +5,7 @@ import PwaInstallBanner from './components/PwaInstallBanner';
 import DashboardView from './components/DashboardView';
 import LoansView from './components/LoansView';
 import RemindersView from './components/RemindersView';
+import ExpensesView from './components/ExpensesView';
 import LedgerView from './components/LedgerView';
 import SettingsView from './components/SettingsView';
 import AddLoanModal from './components/AddLoanModal';
@@ -13,12 +14,15 @@ import PayModal from './components/PayModal';
 import NotificationsModal from './components/NotificationsModal';
 import PdfExportModal from './components/PdfExportModal';
 
-import { LoanItem, PaymentRecord, UserSettings, ReminderItem } from './types';
+import { LoanItem, PaymentRecord, UserSettings, ReminderItem, ExpenseAccount, ExpenseItem } from './types';
 import {
   loadLoans, saveLoans,
   loadPayments, savePayments,
   loadSettings, saveSettings,
   loadReminders, saveReminders,
+  loadAccounts, saveAccounts,
+  loadExpenses, saveExpenses,
+  saveImportedSmsIds, loadImportedSmsIds,
   migrateV3SampleData,
   currentMonthYear,
   calculateDueStatus
@@ -33,6 +37,8 @@ export default function App() {
   });
   const [payments, setPayments] = useState<PaymentRecord[]>(() => loadPayments());
   const [reminders, setReminders] = useState<ReminderItem[]>(() => loadReminders());
+  const [accounts, setAccounts] = useState<ExpenseAccount[]>(() => loadAccounts());
+  const [expenses, setExpenses] = useState<ExpenseItem[]>(() => loadExpenses());
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [notifPermission, setNotifPermission] = useState<string>('unknown');
@@ -214,6 +220,8 @@ export default function App() {
     setLoans(loadLoans());
     setPayments(loadPayments());
     setReminders(loadReminders());
+    setAccounts(loadAccounts());
+    setExpenses(loadExpenses());
     setSettings(loadSettings());
   };
 
@@ -279,6 +287,41 @@ export default function App() {
     );
     setReminders(updated);
     saveReminders(updated);
+    playChimeSound('success');
+  };
+
+  const handleSaveExpense = (expense: ExpenseItem) => {
+    const updated = [expense, ...expenses];
+    setExpenses(updated);
+    saveExpenses(updated);
+    playChimeSound('pop');
+  };
+
+  const handleDeleteExpense = (id: string) => {
+    const updated = expenses.filter((e) => e.id !== id);
+    setExpenses(updated);
+    saveExpenses(updated);
+  };
+
+  const handleSaveAccount = (account: ExpenseAccount) => {
+    const updated = [account, ...accounts];
+    setAccounts(updated);
+    saveAccounts(updated);
+    playChimeSound('pop');
+  };
+
+  const handleDeleteAccount = (id: string) => {
+    const updated = accounts.filter((a) => a.id !== id);
+    setAccounts(updated);
+    saveAccounts(updated);
+  };
+
+  const handleImportSmsExpenses = (items: ExpenseItem[], smsIds: string[]) => {
+    if (items.length === 0) return;
+    const updated = [...items, ...expenses];
+    setExpenses(updated);
+    saveExpenses(updated);
+    saveImportedSmsIds([...smsIds, ...loadImportedSmsIds()]);
     playChimeSound('success');
   };
 
@@ -383,6 +426,7 @@ export default function App() {
             loans={loans}
             settings={settings}
             reminders={reminders}
+            expenses={expenses}
             notifPermission={notifPermission}
             notifMessage={notifMessage}
             onEnableNotifications={handleEnableNotifications}
@@ -393,6 +437,7 @@ export default function App() {
             onOpenPayModal={(loan) => setPayingLoan(loan)}
             onSelectLoan={(loan) => setSelectedLoanForDetail(loan)}
             onGoToLoans={() => setCurrentTab('loans')}
+            onGoToSpends={() => setCurrentTab('spends')}
             onGoToReminders={() => setCurrentTab('reminders')}
             onGoToSettings={() => setCurrentTab('settings')}
             onOpenPdfExport={() => handleOpenPdfModal()}
@@ -411,6 +456,19 @@ export default function App() {
             onOpenPayModal={(loan) => setPayingLoan(loan)}
             onOpenPdfExport={() => handleOpenPdfModal()}
             onImportLoans={handleImportLoans}
+          />
+        )}
+
+        {currentTab === 'spends' && (
+          <ExpensesView
+            expenses={expenses}
+            accounts={accounts}
+            settings={settings}
+            onSaveExpense={handleSaveExpense}
+            onDeleteExpense={handleDeleteExpense}
+            onSaveAccount={handleSaveAccount}
+            onDeleteAccount={handleDeleteAccount}
+            onImportSmsExpenses={handleImportSmsExpenses}
           />
         )}
 

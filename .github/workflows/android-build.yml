@@ -86,9 +86,11 @@ jobs:
         with:
           files: release-apk/*.apk
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'beta') }}
           body: |
             ## EquiNote ${{ github.ref_name }} (Android, offline-local)
 
+            ${{ contains(github.ref_name, 'beta') && '**BETA BUILD** — test line, stable stays pinned at v3.0.5.' || '' }}
             Download `EquiNote-${{ github.ref_name }}-debug.apk` below and install on Android
             (allow "Install unknown apps" when prompted).
 

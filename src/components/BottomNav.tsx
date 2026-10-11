@@ -1,6 +1,6 @@
-import { Radar, Landmark, BellRing, History, Settings } from 'lucide-react';
+import { Radar, Landmark, Wallet, BellRing, History, Settings } from 'lucide-react';
 
-export type TabType = 'dashboard' | 'loans' | 'reminders' | 'ledger' | 'settings';
+export type TabType = 'dashboard' | 'loans' | 'spends' | 'reminders' | 'ledger' | 'settings';
 
 interface BottomNavProps {
   currentTab: TabType;
@@ -28,6 +28,11 @@ export default function BottomNav({
       icon: Landmark,
     },
     {
+      id: 'spends' as TabType,
+      label: 'Spends',
+      icon: Wallet,
+    },
+    {
       id: 'reminders' as TabType,
       label: 'Reminders',
       icon: BellRing,
@@ -46,8 +51,8 @@ export default function BottomNav({
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-30 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-2 py-1 pb-safe">
-      <div className="max-w-md mx-auto grid grid-cols-5 gap-1">
+    <nav className="fixed bottom-0 left-0 right-0 z-30 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800/80 px-1 py-1 pb-safe">
+      <div className="max-w-md mx-auto grid grid-cols-6 gap-0.5">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = currentTab === tab.id;
@@ -56,7 +61,7 @@ export default function BottomNav({
             <button
               key={tab.id}
               onClick={() => onChangeTab(tab.id)}
-              className={`relative flex flex-col items-center justify-center py-2 px-1 rounded-xl transition active:scale-90 ${
+              className={`relative flex flex-col items-center justify-center py-2 px-0.5 rounded-xl transition active:scale-90 ${
                 isActive
                   ? 'text-emerald-400 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
@@ -70,7 +75,7 @@ export default function BottomNav({
                   </span>
                 )}
               </div>
-              <span className="text-[11px] mt-1 tracking-tight leading-none">
+              <span className="text-[10px] mt-1 tracking-tight leading-none">
                 {tab.label}
               </span>
               {isActive && (

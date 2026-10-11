@@ -3,7 +3,7 @@ import {
   Calendar, CheckCircle2, Clock, ArrowUpRight,
   Plus, Check, ChevronRight, TrendingDown, FileText, BellRing, BellOff
 } from 'lucide-react';
-import { LoanItem, ReminderItem, UserSettings } from '../types';
+import { LoanItem, ReminderItem, ExpenseItem, UserSettings } from '../types';
 import { calculateDueStatus, currentMonthYear, nextMonthYear } from '../utils/storage';
 import { formatCurrency, calculateRemainingBalance } from '../utils/finance';
 import { CATEGORIES } from '../utils/categories';
@@ -12,6 +12,7 @@ interface DashboardViewProps {
   loans: LoanItem[];
   settings: UserSettings;
   reminders: ReminderItem[];
+  expenses: ExpenseItem[];
   notifPermission: string;
   notifMessage: string | null;
   onEnableNotifications: () => void;
@@ -19,6 +20,7 @@ interface DashboardViewProps {
   onOpenPayModal: (loan: LoanItem) => void;
   onSelectLoan: (loan: LoanItem) => void;
   onGoToLoans: () => void;
+  onGoToSpends: () => void;
   onGoToReminders: () => void;
   onGoToSettings: () => void;
   onOpenPdfExport: () => void;
@@ -28,6 +30,7 @@ export default function DashboardView({
   loans,
   settings,
   reminders,
+  expenses,
   notifPermission,
   notifMessage,
   onEnableNotifications,
@@ -35,6 +38,7 @@ export default function DashboardView({
   onOpenPayModal,
   onSelectLoan,
   onGoToLoans,
+  onGoToSpends,
   onGoToReminders,
   onGoToSettings,
   onOpenPdfExport,
@@ -148,6 +152,18 @@ export default function DashboardView({
       .filter((r) => r.doneMonthYear !== currentMonthYearStr)
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   }, [reminders, currentMonthYearStr]);
+
+  // Today's + this month's spends
+  const spendTotals = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    let todayTotal = 0;
+    let monthTotal = 0;
+    for (const e of expenses) {
+      if (e.date === today) todayTotal += e.amount;
+      if (e.date.startsWith(currentMonthYearStr)) monthTotal += e.amount;
+    }
+    return { todayTotal, monthTotal };
+  }, [expenses, currentMonthYearStr]);
 
   const showNotifBanner =
     settings.notificationsEnabled && notifPermission !== 'granted' && notifPermission !== 'unsupported';
@@ -452,6 +468,26 @@ export default function DashboardView({
           </div>
         </div>
       )}
+
+      {/* Today's spends strip */}
+      <div
+        onClick={onGoToSpends}
+        className="rounded-2xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 p-4 transition cursor-pointer flex items-center justify-between gap-3"
+      >
+        <div>
+          <span className="text-xs font-semibold text-slate-400">Today's spends</span>
+          <div className="text-xl font-extrabold text-white mt-0.5 font-mono">
+            {formatCurrency(spendTotals.todayTotal, settings.currencySymbol)}
+          </div>
+          <span className="text-[11px] text-slate-500">
+            {formatCurrency(spendTotals.monthTotal, settings.currencySymbol)} this month
+          </span>
+        </div>
+        <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-0.5 shrink-0">
+          <span>Track</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </span>
+      </div>
 
       {/* One-time pay notes strip */}
       {pendingReminders.length > 0 && (
