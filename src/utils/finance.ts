@@ -13,6 +13,20 @@ export function calculateEmi(principal: number, annualRatePct: number, months: n
   return Math.round(emi);
 }
 
+/**
+ * Inverse amortization: back-calculate the original principal from a known
+ * EMI, rate and tenure. Used when a bulk-upload CSV has EMI but no principal.
+ */
+export function calculatePrincipalFromEmi(emi: number, annualRatePct: number, months: number): number {
+  if (!Number.isFinite(emi) || emi <= 0 || !Number.isFinite(months) || months <= 0) return 0;
+  if (!Number.isFinite(annualRatePct) || annualRatePct <= 0) {
+    return Math.round(emi * months);
+  }
+  const r = annualRatePct / (12 * 100);
+  const factor = Math.pow(1 + r, months);
+  return Math.round((emi * (factor - 1)) / (r * factor));
+}
+
 export function calculateRemainingBalance(
   principal: number,
   annualRatePct: number,

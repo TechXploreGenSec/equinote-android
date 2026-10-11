@@ -47,6 +47,16 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.3 changelog (CSV tolerance)
+
+- **Loans CSV accepts real-world sheets** — Category accepts display names
+  ("Peer / Family", "Personal Loan", "Gadgets & Tech", …) as well as keys,
+  and a blank Principal is derived from EMI + rate + tenure, so statements
+  like the CRED export import directly.
+- **Import errors explain themselves** — skipped rows now report the reason
+  per row (e.g. which row misses Title/Lender/Tenure) instead of a bare
+  "check the format" message.
+
 ## v3.0.2 changelog (input + import fix)
 
 - **Keyboard fix (the "text area" bug)** — the generated native shell had no

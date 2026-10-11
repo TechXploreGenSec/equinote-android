@@ -1,5 +1,5 @@
 import { LoanItem, LoanCategory, PaymentRecord, UserSettings, AppNotification, ReminderItem } from '../types';
-import { calculateEmi } from './finance';
+import { calculateEmi, calculatePrincipalFromEmi } from './finance';
 
 const STORAGE_KEYS = {
   LOANS: 'equinote_loans_v1',
@@ -416,21 +416,56 @@ const LOAN_CATEGORIES: LoanCategory[] = [
   'education', 'bnpl', 'peer', 'business',
 ];
 
+// Human-readable labels (as shown in the app) also accepted in CSVs.
+const LOAN_CATEGORY_LABELS: Record<string, LoanCategory> = {
+  'home loan': 'home',
+  'auto / vehicle': 'vehicle',
+  'auto': 'vehicle',
+  'vehicle': 'vehicle',
+  'gadgets & tech': 'gadget',
+  'gadgets': 'gadget',
+  'gadget': 'gadget',
+  'card emi / loan': 'credit_card',
+  'credit card': 'credit_card',
+  'personal loan': 'personal',
+  'personal': 'personal',
+  'education loan': 'education',
+  'education': 'education',
+  'bnpl / pay later': 'bnpl',
+  'bnpl': 'bnpl',
+  'pay later': 'bnpl',
+  'peer / family': 'peer',
+  'peer': 'peer',
+  'family': 'peer',
+  'friend': 'peer',
+  'business / sme': 'business',
+  'business': 'business',
+};
+
+export function normalizeLoanCategory(raw: string): LoanCategory {
+  const key = raw.trim().toLowerCase();
+  if (LOAN_CATEGORIES.includes(key as LoanCategory)) return key as LoanCategory;
+  return LOAN_CATEGORY_LABELS[key] || 'personal';
+}
+
 export interface LoanCsvImportResult {
   loans: LoanItem[];
   imported: number;
   skipped: number;
+  errors: string[];
 }
 
 /**
- * Parse a bulk-upload CSV of loans. Columns: Title*, Lender*, Category,
- * Principal*, Interest Rate, Tenure Months*, Paid Months, Monthly EMI
- * (blank = auto-calculated), Due Day*, Start Date, Account Number,
- * Auto-Debit, Notes, Paid This Month (yes/no) (*required).
+ * Parse a bulk-upload CSV of loans. Columns: Title*, Lender*, Category
+ * (key or label, e.g. "peer" or "Peer / Family"), Principal* (blank = derived
+ * from EMI + rate + tenure), Interest Rate, Tenure Months*, Paid Months,
+ * Monthly EMI (blank = auto-calculated), Due Day*, Start Date,
+ * Account Number, Auto-Debit, Notes, Paid This Month (yes/no) (*required
+ * unless derivable).
  */
 export function parseLoansCsv(csvText: string): LoanCsvImportResult {
   const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length < 2) return { loans: [], imported: 0, skipped: 0 };
+  if (lines.length < 2) return { loans: [], imported: 0, skipped: 0, errors: ['CSV has no data rows.'] };
 
   const header = splitCsvLine(lines[0]).map((h) => h.toLowerCase());
   const idx = (names: string[]) => {
@@ -457,37 +492,52 @@ export function parseLoansCsv(csvText: string): LoanCsvImportResult {
 
   const loans: LoanItem[] = [];
   let skipped = 0;
+  const errors: string[] = [];
   const now = new Date();
   const monthStr = currentMonthYear(now);
+  const noteError = (row: number, reason: string) => {
+    skipped++;
+    if (errors.length < 5) errors.push(`Row ${row}: ${reason}.`);
+  };
 
   for (let r = 1; r < lines.length; r++) {
+    const rowNum = r + 1;
     const cols = splitCsvLine(lines[r]);
     const title = (iTitle >= 0 ? cols[iTitle] : '').trim();
     const lender = (iLender >= 0 ? cols[iLender] : '').trim();
-    const principal = Number(iPrincipal >= 0 ? cols[iPrincipal] : NaN);
-    const totalMonths = Math.round(Number(iTenure >= 0 ? cols[iTenure] : NaN));
-    if (!title || !lender || !Number.isFinite(principal) || principal <= 0 ||
-        !Number.isFinite(totalMonths) || totalMonths <= 0) {
-      skipped++;
+    if (!title || !lender) {
+      noteError(rowNum, 'missing Title or Lender');
       continue;
     }
-    const rawCat = (iCat >= 0 ? cols[iCat] : '').trim().toLowerCase();
-    const category: LoanCategory = LOAN_CATEGORIES.includes(rawCat as LoanCategory)
-      ? (rawCat as LoanCategory)
-      : 'personal';
+    const totalMonths = Math.round(Number(iTenure >= 0 ? cols[iTenure] : NaN));
+    if (!Number.isFinite(totalMonths) || totalMonths <= 0) {
+      noteError(rowNum, `"${title}" needs Tenure Months > 0`);
+      continue;
+    }
     const interestRate = iRate >= 0 && cols[iRate] !== '' ? Number(cols[iRate]) || 0 : 0;
+    const emiGiven = iEmi >= 0 && cols[iEmi] !== '' ? Number(cols[iEmi]) : 0;
+
+    let principal = Number(iPrincipal >= 0 ? cols[iPrincipal] : NaN);
+    if (!Number.isFinite(principal) || principal <= 0) {
+      // Derive from EMI + rate + tenure when Principal is blank.
+      principal = calculatePrincipalFromEmi(emiGiven, interestRate, totalMonths);
+      if (!Number.isFinite(principal) || principal <= 0) {
+        noteError(rowNum, `"${title}" needs Principal, or a valid Monthly EMI to derive it`);
+        continue;
+      }
+    }
+    const category = normalizeLoanCategory(iCat >= 0 ? cols[iCat] || '' : '');
     const paidMonths = Math.max(
       0,
       Math.min(totalMonths, Math.round(Number(iPaid >= 0 && cols[iPaid] !== '' ? cols[iPaid] : 0)) || 0)
     );
     const dueDayRaw = Math.round(Number(iDue >= 0 && cols[iDue] !== '' ? cols[iDue] : 5)) || 5;
     const dueDay = Math.max(1, Math.min(31, dueDayRaw));
-    let monthlyEmi = iEmi >= 0 && cols[iEmi] !== '' ? Number(cols[iEmi]) : 0;
+    let monthlyEmi = Number.isFinite(emiGiven) && emiGiven > 0
+      ? emiGiven
+      : calculateEmi(principal, interestRate, totalMonths);
     if (!Number.isFinite(monthlyEmi) || monthlyEmi <= 0) {
-      monthlyEmi = calculateEmi(principal, interestRate, totalMonths);
-    }
-    if (!Number.isFinite(monthlyEmi) || monthlyEmi <= 0) {
-      skipped++;
+      noteError(rowNum, `"${title}" needs a valid Monthly EMI`);
       continue;
     }
     const paidFlag = (iPaidMonth >= 0 ? cols[iPaidMonth] : '').trim().toLowerCase();
@@ -513,5 +563,5 @@ export function parseLoansCsv(csvText: string): LoanCsvImportResult {
     });
   }
 
-  return { loans, imported: loans.length, skipped };
+  return { loans, imported: loans.length, skipped, errors };
 }

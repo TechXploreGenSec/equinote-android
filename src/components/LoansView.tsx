@@ -111,19 +111,21 @@ export default function LoansView({
   };
 
   const runLoansImport = (content: string) => {
-    const { loans: parsed, imported, skipped } = parseLoansCsv(content);
+    const { loans: parsed, imported, skipped, errors } = parseLoansCsv(content);
     if (imported > 0) {
       onImportLoans(parsed);
       setImportStatus(
         `Imported ${imported} loan${imported > 1 ? 's' : ''}` +
-        (skipped > 0 ? `, skipped ${skipped} bad row${skipped > 1 ? 's' : ''}` : '') +
+        (skipped > 0 ? `, skipped ${skipped} row${skipped > 1 ? 's' : ''}: ${errors.join(' ')}` : '') +
         '.'
       );
       setPasteText('');
     } else {
-      setImportStatus('No loans imported. Check the example CSV format below.');
+      setImportStatus(
+        `No loans imported. ${errors.length > 0 ? errors.join(' ') : 'Check the example CSV format below.'}`
+      );
     }
-    setTimeout(() => setImportStatus(null), 6000);
+    setTimeout(() => setImportStatus(null), 8000);
   };
 
   return (
@@ -191,7 +193,7 @@ export default function LoansView({
         </div>
         <p className="text-[11px] text-slate-400 leading-relaxed">
           Columns: <span className="font-mono text-slate-300">Title, Lender, Category, Principal, Interest Rate, Tenure Months, Paid Months, Monthly EMI (blank = auto), Due Day, Start Date, Account Number, Auto-Debit, Notes, Paid This Month (yes/no)</span>.
-          Categories: home, vehicle, gadget, personal, credit_card, education, bnpl, peer, business.
+          Category accepts keys (peer) or names ("Peer / Family"). Principal may be blank when EMI + rate + tenure are given — it is derived automatically.
         </p>
         <pre className="text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-2.5 overflow-x-auto whitespace-pre">
 {LOANS_CSV_EXAMPLE}
