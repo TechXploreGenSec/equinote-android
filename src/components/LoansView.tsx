@@ -36,6 +36,8 @@ export default function LoansView({
   const [selectedCategory, setSelectedCategory] = useState<LoanCategory | 'all'>('all');
   const [sortBy, setSortBy] = useState<SortOption>('due_day');
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState('');
+  const [showPaste, setShowPaste] = useState(false);
   const loansInputRef = useRef<HTMLInputElement>(null);
 
   // Filter and sort loans
@@ -102,22 +104,26 @@ export default function LoansView({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const { loans: parsed, imported, skipped } = parseLoansCsv(content);
-      if (imported > 0) {
-        onImportLoans(parsed);
-        setImportStatus(
-          `Imported ${imported} loan${imported > 1 ? 's' : ''}` +
-          (skipped > 0 ? `, skipped ${skipped} bad row${skipped > 1 ? 's' : ''}` : '') +
-          '.'
-        );
-      } else {
-        setImportStatus('No loans imported. Check the example CSV format below.');
-      }
-      setTimeout(() => setImportStatus(null), 6000);
+      runLoansImport(event.target?.result as string);
     };
     reader.readAsText(file);
     if (loansInputRef.current) loansInputRef.current.value = '';
+  };
+
+  const runLoansImport = (content: string) => {
+    const { loans: parsed, imported, skipped } = parseLoansCsv(content);
+    if (imported > 0) {
+      onImportLoans(parsed);
+      setImportStatus(
+        `Imported ${imported} loan${imported > 1 ? 's' : ''}` +
+        (skipped > 0 ? `, skipped ${skipped} bad row${skipped > 1 ? 's' : ''}` : '') +
+        '.'
+      );
+      setPasteText('');
+    } else {
+      setImportStatus('No loans imported. Check the example CSV format below.');
+    }
+    setTimeout(() => setImportStatus(null), 6000);
   };
 
   return (
@@ -145,7 +151,7 @@ export default function LoansView({
           <input
             ref={loansInputRef}
             type="file"
-            accept=".csv"
+            accept=".csv,text/csv,text/plain"
             onChange={handleImportLoansFile}
             className="hidden"
           />
@@ -190,6 +196,30 @@ export default function LoansView({
         <pre className="text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-2.5 overflow-x-auto whitespace-pre">
 {LOANS_CSV_EXAMPLE}
         </pre>
+        <button
+          onClick={() => setShowPaste(!showPaste)}
+          className="text-[11px] font-bold text-sky-400 hover:underline"
+        >
+          {showPaste ? 'Hide paste box' : 'File picker not opening? Paste CSV text instead'}
+        </button>
+        {showPaste && (
+          <div className="space-y-2">
+            <textarea
+              rows={5}
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Paste your loans CSV here, header row included…"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              onClick={() => runLoansImport(pasteText)}
+              disabled={!pasteText.trim()}
+              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold text-xs transition active:scale-98"
+            >
+              Import Pasted CSV
+            </button>
+          </div>
+        )}
         {importStatus && (
           <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
             {importStatus}

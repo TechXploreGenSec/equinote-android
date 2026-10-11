@@ -49,12 +49,12 @@ jobs:
       - name: Build web (dist/)
         run: npm run build
 
-      - name: Capacitor - add + icons + sync Android
+      - name: Capacitor - sync Android (native shell is committed)
         run: |
           if [ ! -d android ]; then
             npx cap add android
+            npx capacitor-assets generate --android --iconBackgroundColor '#0F172A' --splashBackgroundColor '#0F172A'
           fi
-          npx capacitor-assets generate --android --iconBackgroundColor '#0F172A' --splashBackgroundColor '#0F172A'
           npx cap sync android
 
       - name: Build debug APK

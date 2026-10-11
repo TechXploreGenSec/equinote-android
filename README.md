@@ -47,6 +47,17 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.2 changelog (input + import fix)
+
+- **Keyboard fix (the "text area" bug)** — the generated native shell had no
+  `windowSoftInputMode`, so the keyboard covered bottom-sheet forms and typing
+  felt broken. `android/` is now committed with
+  `android:windowSoftInputMode="adjustResize"`, plus CSS that never blocks text
+  selection and removes tap delay on inputs/buttons.
+- **Bulk import fallback** — Loans and Ledger import cards keep the file picker
+  (wider `accept` types) and add a "Paste CSV text instead" box using the same
+  parsers, so bulk import works even when the device file picker won't open.
+
 ## v3.0.1 changelog (download fix)
 
 - **Android downloads fixed** — JSON backup export, payment CSV export/example,

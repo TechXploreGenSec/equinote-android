@@ -19,6 +19,17 @@
   code, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+
+  /* Android WebView: never block text entry, remove tap delay */
+  input, textarea, select {
+    -webkit-user-select: text;
+    user-select: text;
+    touch-action: manipulation;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
 }
 
 /* Sticky app header that always clears the notch + status bar */

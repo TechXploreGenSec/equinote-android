@@ -26,6 +26,8 @@ export default function LedgerView({
   const [search, setSearch] = useState('');
   const [selectedLoanFilter, setSelectedLoanFilter] = useState<string>('all');
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [pasteText, setPasteText] = useState('');
+  const [showPaste, setShowPaste] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const filteredPayments = useMemo(() => {
@@ -72,22 +74,26 @@ export default function LedgerView({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const { records, imported, skipped } = parsePaymentsCsv(content, loans);
-      if (imported > 0) {
-        onImportPayments(records);
-        setImportStatus(
-          `Imported ${imported} payment${imported > 1 ? 's' : ''}` +
-          (skipped > 0 ? `, skipped ${skipped} (unknown loan or bad row)` : '') +
-          '. Loan progress aligned to highest installment.'
-        );
-      } else {
-        setImportStatus('No rows imported. Check the example CSV format and loan titles.');
-      }
-      setTimeout(() => setImportStatus(null), 6000);
+      runPaymentsImport(event.target?.result as string);
     };
     reader.readAsText(file);
     if (csvInputRef.current) csvInputRef.current.value = '';
+  };
+
+  const runPaymentsImport = (content: string) => {
+    const { records, imported, skipped } = parsePaymentsCsv(content, loans);
+    if (imported > 0) {
+      onImportPayments(records);
+      setImportStatus(
+        `Imported ${imported} payment${imported > 1 ? 's' : ''}` +
+        (skipped > 0 ? `, skipped ${skipped} (unknown loan or bad row)` : '') +
+        '. Loan progress aligned to highest installment.'
+      );
+      setPasteText('');
+    } else {
+      setImportStatus('No rows imported. Check the example CSV format and loan titles.');
+    }
+    setTimeout(() => setImportStatus(null), 6000);
   };
 
   return (
@@ -114,7 +120,7 @@ export default function LedgerView({
           <input
             ref={csvInputRef}
             type="file"
-            accept=".csv"
+            accept=".csv,text/csv,text/plain"
             onChange={handleImportCsvFile}
             className="hidden"
           />
@@ -151,6 +157,30 @@ export default function LedgerView({
         <pre className="text-[10px] font-mono text-slate-400 bg-slate-950 border border-slate-800 rounded-xl p-2.5 overflow-x-auto whitespace-pre">
 {PAYMENTS_CSV_EXAMPLE}
         </pre>
+        <button
+          onClick={() => setShowPaste(!showPaste)}
+          className="text-[11px] font-bold text-sky-400 hover:underline"
+        >
+          {showPaste ? 'Hide paste box' : 'File picker not opening? Paste CSV text instead'}
+        </button>
+        {showPaste && (
+          <div className="space-y-2">
+            <textarea
+              rows={5}
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+              placeholder="Paste your payments CSV here, header row included…"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              onClick={() => runPaymentsImport(pasteText)}
+              disabled={!pasteText.trim()}
+              className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold text-xs transition active:scale-98"
+            >
+              Import Pasted CSV
+            </button>
+          </div>
+        )}
         {importStatus && (
           <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs">
             {importStatus}

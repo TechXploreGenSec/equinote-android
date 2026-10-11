@@ -7,11 +7,15 @@ coverage/
 .env*
 !.env.example
 
-# Capacitor / Android
+# Capacitor / Android (native shell IS committed for manifest control;
+# regenerated web bundle + local SDK files are not)
 android/app/build/
+android/app/src/main/assets/
 android/.gradle/
+android/build/
 android/local.properties
 android/*.iml
+android/.idea/
 *.keystore
 *.jks
 

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EquiNote</string>
+    <string name="title_activity_main">EquiNote</string>
+    <string name="package_name">com.equinote.tracker</string>
+    <string name="custom_url_scheme">com.equinote.tracker</string>
+</resources>
