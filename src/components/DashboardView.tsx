@@ -13,6 +13,7 @@ interface DashboardViewProps {
   settings: UserSettings;
   reminders: ReminderItem[];
   notifPermission: string;
+  notifMessage: string | null;
   onEnableNotifications: () => void;
   onOpenAddLoan: () => void;
   onOpenPayModal: (loan: LoanItem) => void;
@@ -28,6 +29,7 @@ export default function DashboardView({
   settings,
   reminders,
   notifPermission,
+  notifMessage,
   onEnableNotifications,
   onOpenAddLoan,
   onOpenPayModal,
@@ -185,19 +187,26 @@ export default function DashboardView({
 
       {/* Notification permission banner (first-run ask) */}
       {showNotifBanner && (
-        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3.5 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <BellOff className="w-5 h-5 text-amber-400 shrink-0" />
-            <p className="text-xs text-amber-200">
-              Reminders are off — allow notifications to get due alerts even when the app is closed.
-            </p>
+        <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <BellOff className="w-5 h-5 text-amber-400 shrink-0" />
+              <p className="text-xs text-amber-200">
+                Reminders are off — allow notifications to get due alerts even when the app is closed.
+              </p>
+            </div>
+            <button
+              onClick={onEnableNotifications}
+              className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition shrink-0 active:scale-95"
+            >
+              Enable
+            </button>
           </div>
-          <button
-            onClick={onEnableNotifications}
-            className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold transition shrink-0 active:scale-95"
-          >
-            Enable
-          </button>
+          {notifMessage && (
+            <p className="text-[11px] text-amber-100/90 leading-relaxed bg-slate-950/50 rounded-xl px-3 py-2">
+              {notifMessage}
+            </p>
+          )}
         </div>
       )}
 
@@ -413,27 +422,32 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* Next-month outlook — shown once everything is paid this month */}
+      {/* Next-month outlook — shown once everything is paid this month.
+          Special-attention gold design, deliberately different from the
+          emerald monthly cards. */}
       {nextMonthOutlook && (
-        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex items-center justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              All clear this month
-            </p>
-            <p className="text-sm font-bold text-white mt-1">
-              Next due {nextMonthOutlook.dateStr}
-            </p>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              {nextMonthOutlook.reminderTotal > 0
-                ? `EMIs ${formatCurrency(nextMonthOutlook.emiTotal, settings.currencySymbol)} + notes ${formatCurrency(nextMonthOutlook.reminderTotal, settings.currencySymbol)}`
-                : 'Same EMIs repeat next month'}
-            </p>
-          </div>
-          <div className="text-right shrink-0">
-            <span className="text-[11px] text-slate-400">Next month</span>
-            <div className="text-xl font-extrabold text-emerald-400 font-mono">
-              {formatCurrency(nextMonthOutlook.total, settings.currencySymbol)}
+        <div className="rounded-3xl bg-gradient-to-br from-amber-300 via-amber-400 to-orange-400 p-[1.5px] shadow-xl shadow-amber-950/40">
+          <div className="rounded-3xl bg-gradient-to-br from-amber-300 via-amber-400 to-orange-400 p-4 flex items-center justify-between gap-3 relative overflow-hidden">
+            <div className="absolute -left-10 -bottom-14 w-44 h-44 bg-white/25 rounded-full blur-2xl pointer-events-none" />
+            <div className="relative z-10">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-widest text-amber-950 bg-slate-950/85 text-amber-300 px-2.5 py-1 rounded-full">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Next month · plan ahead
+              </span>
+              <p className="text-base font-extrabold text-amber-950 mt-2">
+                Due {nextMonthOutlook.dateStr}
+              </p>
+              <p className="text-[11px] font-semibold text-amber-900/80 mt-0.5">
+                {nextMonthOutlook.reminderTotal > 0
+                  ? `EMIs ${formatCurrency(nextMonthOutlook.emiTotal, settings.currencySymbol)} + notes ${formatCurrency(nextMonthOutlook.reminderTotal, settings.currencySymbol)}`
+                  : 'Same EMIs repeat next month'}
+              </p>
+            </div>
+            <div className="text-right shrink-0 relative z-10 bg-slate-950/85 rounded-2xl px-4 py-3">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">Total</span>
+              <div className="text-2xl font-extrabold text-white font-mono">
+                {formatCurrency(nextMonthOutlook.total, settings.currencySymbol)}
+              </div>
             </div>
           </div>
         </div>

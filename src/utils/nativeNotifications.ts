@@ -8,9 +8,21 @@ import {
 
 const ASKED_KEY = 'equinote_notif_asked_v1';
 
+export const SETTINGS_HINT =
+  'System dialog did not appear — notifications are blocked for EquiNote. Open Android Settings → Apps → EquiNote → Notifications and turn them on, then tap Enable again.';
+
 export function isNative(): boolean {
   try {
     return Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
+
+/** True only when the native notification bridge is actually callable. */
+export function isNotificationBridgeOk(): boolean {
+  try {
+    return !isNative() || Capacitor.isPluginAvailable('LocalNotifications');
   } catch {
     return false;
   }
@@ -24,35 +36,47 @@ function hashId(s: string): number {
   return Math.abs(h % 2000000000);
 }
 
+export interface PermissionResult {
+  granted: boolean;
+  /** Raw status: granted | denied | prompt | default | unsupported | unavailable | unknown */
+  status: string;
+  /** False when running native but the plugin bridge is missing. */
+  bridge: boolean;
+}
+
 /**
  * First-run permission flow.
  * - Android (native): request via LocalNotifications plugin (system dialog).
- * - Web: request via Notification API (may need a user gesture; caller can
- *   retry from the in-app "Enable reminders" banner).
- * Runs only once per device (flag), returns granted status.
+ * - Web: request via Notification API (needs a user gesture; retry from the
+ *   in-app "Enable reminders" banner).
+ * Always reports back what happened so the UI can show it — never silent.
  */
-export async function ensureNotificationPermission(): Promise<boolean> {
+export async function ensureNotificationPermission(): Promise<PermissionResult> {
+  const fail = (status: string, bridge = true): PermissionResult => ({ granted: false, status, bridge });
   try {
     if (isNative()) {
+      if (!Capacitor.isPluginAvailable('LocalNotifications')) {
+        return fail('unavailable', false);
+      }
       const { LocalNotifications } = await import('@capacitor/local-notifications');
       const current = await LocalNotifications.checkPermissions();
-      if (current.display === 'granted') return true;
+      if (current.display === 'granted') return { granted: true, status: 'granted', bridge: true };
       const asked = await LocalNotifications.requestPermissions();
       try {
         localStorage.setItem(ASKED_KEY, 'yes');
       } catch { /* ignore */ }
-      return asked.display === 'granted';
+      return { granted: asked.display === 'granted', status: asked.display, bridge: true };
     }
     const status = getNotificationPermissionStatus();
-    if (status === 'granted') return true;
-    if (status === 'denied' || status === 'unsupported') return false;
+    if (status === 'granted') return { granted: true, status, bridge: true };
+    if (status === 'denied' || status === 'unsupported') return fail(status);
     const granted = await requestWebPermission();
     try {
       localStorage.setItem(ASKED_KEY, 'yes');
     } catch { /* ignore */ }
-    return granted;
+    return { granted, status: granted ? 'granted' : getNotificationPermissionStatus(), bridge: true };
   } catch {
-    return false;
+    return fail('unknown');
   }
 }
 
@@ -92,9 +116,12 @@ function atTime(base: Date, timeHHMM: string): Date {
 export async function scheduleDueReminders(
   loans: LoanItem[],
   settings: UserSettings
-): Promise<void> {
-  if (!isNative() || !settings.notificationsEnabled) return;
+): Promise<{ scheduled: number; ok: boolean; error?: string }> {
+  if (!isNative() || !settings.notificationsEnabled) return { scheduled: 0, ok: true };
   try {
+    if (!Capacitor.isPluginAvailable('LocalNotifications')) {
+      return { scheduled: 0, ok: false, error: 'notification bridge unavailable' };
+    }
     const { LocalNotifications } = await import('@capacitor/local-notifications');
     const pending = await LocalNotifications.getPending();
     if (pending.notifications.length > 0) {
@@ -131,7 +158,7 @@ export async function scheduleDueReminders(
       });
     }
 
-    if (toSchedule.length === 0) return;
+    if (toSchedule.length === 0) return { scheduled: 0, ok: true };
     await LocalNotifications.schedule({
       notifications: toSchedule.map((n) => ({
         id: n.id,
@@ -140,7 +167,8 @@ export async function scheduleDueReminders(
         schedule: { at: n.at },
       })),
     });
-  } catch {
-    // Notifications are best-effort; never break the app.
+    return { scheduled: toSchedule.length, ok: true };
+  } catch (e) {
+    return { scheduled: 0, ok: false, error: e instanceof Error ? e.message : 'schedule failed' };
   }
 }

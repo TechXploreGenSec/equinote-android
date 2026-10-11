@@ -24,7 +24,7 @@ import {
   calculateDueStatus
 } from './utils/storage';
 import { showSystemNotification, playChimeSound } from './utils/notifications';
-import { ensureNotificationPermission, scheduleDueReminders, getPermissionStatus } from './utils/nativeNotifications';
+import { ensureNotificationPermission, scheduleDueReminders, getPermissionStatus, SETTINGS_HINT } from './utils/nativeNotifications';
 
 export default function App() {
   const [loans, setLoans] = useState<LoanItem[]>(() => {
@@ -36,6 +36,7 @@ export default function App() {
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
   const [currentTab, setCurrentTab] = useState<TabType>('dashboard');
   const [notifPermission, setNotifPermission] = useState<string>('unknown');
+  const [notifMessage, setNotifMessage] = useState<string | null>(null);
 
   // Modals state
   const [isAddLoanOpen, setIsAddLoanOpen] = useState(false);
@@ -297,13 +298,26 @@ export default function App() {
   }, [reminders]);
 
   const handleEnableNotifications = useCallback(async () => {
-    const granted = await ensureNotificationPermission();
-    setNotifPermission(await getPermissionStatus());
-    if (granted) {
+    setNotifMessage('Requesting notification permission…');
+    const result = await ensureNotificationPermission();
+    setNotifPermission(result.status);
+    if (result.granted) {
       handleUpdateSettings({ notificationsEnabled: true });
-      await scheduleDueReminders(loans, { ...settings, notificationsEnabled: true });
+      const scheduled = await scheduleDueReminders(loans, { ...settings, notificationsEnabled: true });
+      setNotifMessage(
+        scheduled.scheduled > 0
+          ? `Reminders on — ${scheduled.scheduled} due alert${scheduled.scheduled > 1 ? 's' : ''} scheduled.`
+          : 'Reminders on — nothing due right now, alerts will fire before due dates.'
+      );
       playChimeSound('success');
+    } else if (!result.bridge) {
+      setNotifMessage('Notification bridge missing in this build — please reinstall the latest APK from Releases.');
+    } else if (result.status === 'denied') {
+      setNotifMessage(SETTINGS_HINT);
+    } else {
+      setNotifMessage('Permission not granted yet — tap Enable again.');
     }
+    setTimeout(() => setNotifMessage(null), 9000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loans, settings]);
 
@@ -370,6 +384,7 @@ export default function App() {
             settings={settings}
             reminders={reminders}
             notifPermission={notifPermission}
+            notifMessage={notifMessage}
             onEnableNotifications={handleEnableNotifications}
             onOpenAddLoan={() => {
               setEditingLoan(null);

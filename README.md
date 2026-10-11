@@ -47,6 +47,19 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.0.4 changelog (feedback + attention fixes)
+
+- **No more silent failures** — Enable-notifications, PDF save/share, and every
+  file download now report what happened. Blocked permissions point to
+  Android Settings → Apps → EquiNote → Notifications; a missing native bridge
+  says to reinstall the latest APK.
+- **PDF both buttons work on Android** — the print button previously called
+  `window.print()`, which does nothing in a WebView. On native it now uses the
+  same save-to-Documents + Share-sheet flow as the formatted-PDF button.
+- **Next-month total, special attention** — the all-paid outlook card is now a
+  gold gradient panel (dark text, pill badge, inset total chip), visually
+  distinct from the emerald monthly cards.
+
 ## v3.0.3 changelog (CSV tolerance)
 
 - **Loans CSV accepts real-world sheets** — Category accepts display names

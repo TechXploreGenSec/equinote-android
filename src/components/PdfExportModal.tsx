@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { LoanItem, PaymentRecord, UserSettings } from '../types';
 import { generatePortfolioPdf, formatPdfCurrency } from '../utils/pdfGenerator';
-import { savePdfNative } from '../utils/capacitorPdf';
+import { savePdfNative, isNativeAndroid, friendlyNativeError } from '../utils/capacitorPdf';
 import { formatCurrency, calculateRemainingBalance, calculateTotalInterest } from '../utils/finance';
 import { calculateDueStatus } from '../utils/storage';
 import { CATEGORIES } from '../utils/categories';
@@ -39,6 +39,8 @@ export default function PdfExportModal({
   const [showPreview, setShowPreview] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const onNative = isNativeAndroid();
 
   if (!isOpen) return null;
 
@@ -72,6 +74,7 @@ export default function PdfExportModal({
   // Direct PDF Download (web: browser download, Android: save to Documents + Share sheet)
   const handleDownloadPdf = () => {
     setIsGenerating(true);
+    setPdfError(null);
     setTimeout(async () => {
       try {
         const doc = generatePortfolioPdf(loans, payments, settings, {
@@ -93,15 +96,20 @@ export default function PdfExportModal({
         setDownloadSuccess(true);
         setTimeout(() => setDownloadSuccess(false), 2500);
       } catch (err) {
-        console.error('Error generating PDF', err);
+        setPdfError(friendlyNativeError(err));
       } finally {
         setIsGenerating(false);
       }
     }, 100);
   };
 
-  // Browser Native Print (Print / Save as PDF)
+  // Print: browser print engine on web. Android WebView has no print
+  // pipeline, so on native this routes to the same save+share flow.
   const handleNativePrint = () => {
+    if (onNative) {
+      handleDownloadPdf();
+      return;
+    }
     window.print();
   };
 
@@ -359,11 +367,18 @@ export default function PdfExportModal({
             <div className="pt-2 space-y-2">
               <button
                 onClick={handleNativePrint}
-                className="w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-emerald-950/40 active:scale-98 flex items-center justify-center gap-2"
+                disabled={isGenerating || targetLoans.length === 0}
+                className="w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs sm:text-sm transition shadow-lg shadow-emerald-950/40 active:scale-98 flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 <Printer className="w-4 h-4 stroke-[2.5]" />
-                <span>Print / Save as PDF (Native Engine)</span>
+                <span>{onNative ? 'Share / Save PDF (Recommended)' : 'Print / Save as PDF (Native Engine)'}</span>
               </button>
+
+              {pdfError && (
+                <p className="text-[11px] leading-relaxed bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl px-3 py-2">
+                  {pdfError}
+                </p>
+              )}
 
               <button
                 onClick={handleDownloadPdf}

@@ -1,9 +1,18 @@
+import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 import { isNative as isNativeAndroid } from './shareFile';
 import type jsPDF from 'jspdf';
 
 export { isNativeAndroid };
+
+export function friendlyNativeError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/not implemented|not available|unavailable/i.test(msg)) {
+    return 'Native file bridge missing in this build — please reinstall the latest APK from Releases.';
+  }
+  return `Save failed (${msg}). The file could not be written — please retry.`;
+}
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -26,6 +35,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
  */
 export async function savePdfNative(doc: jsPDF, filename: string): Promise<boolean> {
   if (!isNativeAndroid()) return false;
+  if (!Capacitor.isPluginAvailable('Filesystem') || !Capacitor.isPluginAvailable('Share')) {
+    throw new Error('Native file bridge missing in this build — please reinstall the latest APK from Releases.');
+  }
   const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
   const output = doc.output('arraybuffer') as ArrayBuffer;
   const base64 = arrayBufferToBase64(output);

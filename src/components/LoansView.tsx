@@ -96,7 +96,12 @@ export default function LoansView({
   const closedCount = useMemo(() => loans.filter((l) => l.isClosed).length, [loans]);
 
   const handleDownloadLoansExample = async () => {
-    await downloadTextFile('EquiNote_Loans_Example.csv', LOANS_CSV_EXAMPLE, 'EquiNote Example');
+    try {
+      await downloadTextFile('EquiNote_Loans_Example.csv', LOANS_CSV_EXAMPLE, 'EquiNote Example');
+    } catch {
+      setImportStatus('Example download failed — please retry.');
+      setTimeout(() => setImportStatus(null), 6000);
+    }
   };
 
   const handleImportLoansFile = (e: React.ChangeEvent<HTMLInputElement>) => {

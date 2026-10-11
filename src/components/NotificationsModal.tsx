@@ -4,12 +4,16 @@ import {
   Clock, Volume2, VolumeX, Smartphone 
 } from 'lucide-react';
 import { LoanItem, UserSettings, AppNotification } from '../types';
-import { 
-  requestNotificationPermission, 
-  getNotificationPermissionStatus, 
-  showSystemNotification, 
-  playChimeSound 
+import {
+  getNotificationPermissionStatus,
+  showSystemNotification,
+  playChimeSound
 } from '../utils/notifications';
+import {
+  ensureNotificationPermission,
+  getPermissionStatus,
+  SETTINGS_HINT,
+} from '../utils/nativeNotifications';
 import { calculateDueStatus } from '../utils/storage';
 import { formatCurrency } from '../utils/finance';
 
@@ -30,12 +34,14 @@ export default function NotificationsModal({
 }: NotificationsModalProps) {
   const [permissionStatus, setPermissionStatus] = useState(getNotificationPermissionStatus());
   const [testSent, setTestSent] = useState(false);
+  const [permMessage, setPermMessage] = useState<string | null>(null);
 
   // Refresh live permission status every time the modal opens
   useEffect(() => {
     if (isOpen) {
-      setPermissionStatus(getNotificationPermissionStatus());
+      void getPermissionStatus().then((s) => setPermissionStatus(s as NotificationPermission));
       setTestSent(false);
+      setPermMessage(null);
     }
   }, [isOpen]);
 
@@ -52,15 +58,23 @@ export default function NotificationsModal({
     .sort((a, b) => a.due.daysRemaining - b.due.daysRemaining);
 
   const handleRequestPermission = async () => {
-    const granted = await requestNotificationPermission();
-    setPermissionStatus(getNotificationPermissionStatus());
-    onUpdateSettings({ notificationsEnabled: granted });
+    setPermMessage('Requesting permission — answer the system dialog…');
+    const result = await ensureNotificationPermission();
+    setPermissionStatus(result.status as NotificationPermission);
+    onUpdateSettings({ notificationsEnabled: result.granted });
 
-    if (granted) {
+    if (result.granted) {
+      setPermMessage('Granted — due alerts are now scheduled on this device.');
       showSystemNotification('EquiNote Alerts Enabled! 🔔', {
         body: 'You will receive reminders before your EMI due dates.',
       });
       playChimeSound('success');
+    } else if (!result.bridge) {
+      setPermMessage('Notification bridge missing in this build — please reinstall the latest APK from Releases.');
+    } else if (result.status === 'denied') {
+      setPermMessage(SETTINGS_HINT);
+    } else {
+      setPermMessage('Permission not granted yet — tap the button again after answering the dialog.');
     }
   };
 
@@ -145,6 +159,12 @@ export default function NotificationsModal({
                 </button>
               )}
             </div>
+
+            {permMessage && (
+              <p className="text-[11px] leading-relaxed bg-slate-900 rounded-xl px-3 py-2 text-slate-300 border border-slate-800">
+                {permMessage}
+              </p>
+            )}
           </div>
 
           {/* Preferences */}

@@ -58,15 +58,27 @@ export default function LedgerView({
   }, [payments]);
 
   const handleDownloadCsv = async () => {
-    await downloadTextFile(
-      `EquiNote_Payment_Ledger_${new Date().toISOString().split('T')[0]}.csv`,
-      exportPaymentsCsv(payments),
-      'EquiNote Ledger'
-    );
+    try {
+      await downloadTextFile(
+        `EquiNote_Payment_Ledger_${new Date().toISOString().split('T')[0]}.csv`,
+        exportPaymentsCsv(payments),
+        'EquiNote Ledger'
+      );
+      setImportStatus('Ledger saved — check Documents / Share sheet on Android.');
+      setTimeout(() => setImportStatus(null), 5000);
+    } catch {
+      setImportStatus('Export failed — please retry. On Android the file saves via the Share sheet.');
+      setTimeout(() => setImportStatus(null), 6000);
+    }
   };
 
   const handleDownloadExampleCsv = async () => {
-    await downloadTextFile('EquiNote_Payments_Example.csv', PAYMENTS_CSV_EXAMPLE, 'EquiNote Example');
+    try {
+      await downloadTextFile('EquiNote_Payments_Example.csv', PAYMENTS_CSV_EXAMPLE, 'EquiNote Example');
+    } catch {
+      setImportStatus('Example download failed — please retry.');
+      setTimeout(() => setImportStatus(null), 6000);
+    }
   };
 
   const handleImportCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
