@@ -62,8 +62,7 @@ public class SmsReaderPlugin extends Plugin {
         if (limit <= 0 || limit > 500) {
             limit = 200;
         }
-        double sinceDouble = call.getDouble("since", 0);
-        long since = (long) sinceDouble;
+        long since = call.getLong("since", 0L);
 
         JSArray messages = new JSArray();
         ContentResolver cr = getContext().getContentResolver();
