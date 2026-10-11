@@ -11,6 +11,7 @@ import AddLoanModal from './components/AddLoanModal';
 import LoanDetailModal from './components/LoanDetailModal';
 import PayModal from './components/PayModal';
 import NotificationsModal from './components/NotificationsModal';
+import PdfExportModal from './components/PdfExportModal';
 
 import { LoanItem, PaymentRecord, UserSettings } from './types';
 import { 
@@ -34,6 +35,13 @@ export default function App() {
   const [payingLoan, setPayingLoan] = useState<LoanItem | null>(null);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [simulatorPreselectedLoan, setSimulatorPreselectedLoan] = useState<LoanItem | null>(null);
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [pdfSpecificLoanId, setPdfSpecificLoanId] = useState<string | undefined>(undefined);
+
+  const handleOpenPdfModal = (specificLoanId?: string) => {
+    setPdfSpecificLoanId(specificLoanId);
+    setIsPdfModalOpen(true);
+  };
 
   // Sync to local storage
   const handleSaveLoan = (loanData: Partial<LoanItem>) => {
@@ -260,6 +268,7 @@ export default function App() {
               setCurrentTab('simulators');
             }}
             onGoToSettings={() => setCurrentTab('settings')}
+            onOpenPdfExport={() => handleOpenPdfModal()}
           />
         )}
 
@@ -273,6 +282,7 @@ export default function App() {
             }}
             onSelectLoan={(loan) => setSelectedLoanForDetail(loan)}
             onOpenPayModal={(loan) => setPayingLoan(loan)}
+            onOpenPdfExport={() => handleOpenPdfModal()}
           />
         )}
 
@@ -299,6 +309,7 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
             onReloadData={handleReloadData}
             onOpenNotifications={() => setIsNotificationsOpen(true)}
+            onOpenPdfExport={() => handleOpenPdfModal()}
           />
         )}
       </main>
@@ -339,6 +350,7 @@ export default function App() {
           setCurrentTab('simulators');
         }}
         onOpenPayModal={(loan) => setPayingLoan(loan)}
+        onExportPdf={(loan) => handleOpenPdfModal(loan.id)}
       />
 
       <PayModal
@@ -355,6 +367,18 @@ export default function App() {
         loans={loans}
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
+      />
+
+      <PdfExportModal
+        isOpen={isPdfModalOpen}
+        onClose={() => {
+          setIsPdfModalOpen(false);
+          setPdfSpecificLoanId(undefined);
+        }}
+        loans={loans}
+        payments={payments}
+        settings={settings}
+        defaultSpecificLoanId={pdfSpecificLoanId}
       />
     </div>
   );

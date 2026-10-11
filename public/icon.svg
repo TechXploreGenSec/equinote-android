@@ -1,51 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="50%" stop-color="#090d16" />
-      <stop offset="100%" stop-color="#020617" />
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
     </linearGradient>
     <linearGradient id="brand" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#10b981" />
-      <stop offset="100%" stop-color="#059669" />
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="100%" stop-color="#2563eb" />
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="100%" stop-color="#059669"/>
     </linearGradient>
   </defs>
-  
-  <!-- Base Background -->
-  <rect width="512" height="512" rx="112" fill="url(#bg)" />
-  
-  <!-- Subtle Glow -->
-  <circle cx="256" cy="230" r="140" fill="#10b981" opacity="0.12" filter="blur(30px)" />
-  
-  <!-- Main Card Outline / Vault Form -->
-  <rect x="96" y="116" width="320" height="280" rx="36" fill="#1e293b" stroke="#334155" stroke-width="6" />
-  
-  <!-- Top Header bar of card -->
-  <rect x="96" y="116" width="320" height="72" rx="36" fill="#0f172a" />
-  <rect x="96" y="152" width="320" height="36" fill="#0f172a" />
-  <line x1="96" y1="188" x2="416" y2="188" stroke="#334155" stroke-width="4" />
-  
-  <!-- Status dots / date pins -->
-  <circle cx="140" cy="152" r="8" fill="#10b981" />
-  <circle cx="170" cy="152" r="8" fill="#38bdf8" />
-  <circle cx="200" cy="152" r="8" fill="#64748b" />
-  
-  <!-- Calendar Due Badge -->
-  <rect x="330" y="136" width="56" height="32" rx="8" fill="#10b981" opacity="0.2" />
-  <text x="358" y="158" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="700" fill="#10b981" text-anchor="middle">EMI</text>
-  
-  <!-- Central Emblem: Shield + Check + Currency Notch -->
-  <g transform="translate(186, 216)">
-    <circle cx="70" cy="70" r="64" fill="url(#brand)" />
-    <!-- Checkmark & Installment notch -->
-    <path d="M48 70 L64 86 L94 54" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
-  </g>
-  
-  <!-- Bottom Progress Bar -->
-  <rect x="136" y="348" width="240" height="12" rx="6" fill="#334155" />
-  <rect x="136" y="348" width="168" height="12" rx="6" fill="url(#brand)" />
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="235" r="150" fill="#10b981" opacity="0.14"/>
+  <rect x="156" y="79" width="200" height="40" rx="20" fill="#0e7490"/>
+  <text x="256" y="107" font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="700" fill="#7dd3fc" text-anchor="middle">EMI TRACKER</text>
+  <circle cx="256" cy="241" r="113" fill="#1e293b"/>
+  <circle cx="256" cy="241" r="105" fill="url(#brand)"/>
+  <text x="256" y="283" font-family="DejaVu Sans, sans-serif" font-size="130" font-weight="700" fill="#ffffff" text-anchor="middle">&#8377;</text>
+  <rect x="116" y="389" width="64" height="18" rx="9" fill="#10b981"/>
+  <rect x="190" y="389" width="64" height="18" rx="9" fill="#10b981"/>
+  <rect x="264" y="389" width="64" height="18" rx="9" fill="#10b981"/>
+  <rect x="338" y="389" width="64" height="18" rx="9" fill="#334155"/>
 </svg>

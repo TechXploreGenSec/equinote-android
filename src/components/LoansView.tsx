@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { 
   Search, Plus, Filter, CheckCircle2, 
-  ChevronRight, ArrowUpDown, ShieldCheck, Check
+  ChevronRight, ArrowUpDown, ShieldCheck, Check, FileText
 } from 'lucide-react';
 import { LoanItem, UserSettings, LoanCategory } from '../types';
 import { calculateDueStatus } from '../utils/storage';
@@ -14,6 +14,7 @@ interface LoansViewProps {
   onOpenAddLoan: () => void;
   onSelectLoan: (loan: LoanItem) => void;
   onOpenPayModal: (loan: LoanItem) => void;
+  onOpenPdfExport: () => void;
 }
 
 type FilterStatus = 'all_active' | 'due_soon' | 'closed' | 'all';
@@ -25,6 +26,7 @@ export default function LoansView({
   onOpenAddLoan,
   onSelectLoan,
   onOpenPayModal,
+  onOpenPdfExport,
 }: LoansViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('all_active');
@@ -99,13 +101,24 @@ export default function LoansView({
           </p>
         </div>
 
-        <button
-          onClick={onOpenAddLoan}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition shadow-md shadow-emerald-950/30 active:scale-95"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>Add Loan</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenPdfExport}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition active:scale-95"
+            title="Export Portfolio to PDF"
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-400" />
+            <span>PDF Extract</span>
+          </button>
+
+          <button
+            onClick={onOpenAddLoan}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition shadow-md shadow-emerald-950/30 active:scale-95"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>Add Loan</span>
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}

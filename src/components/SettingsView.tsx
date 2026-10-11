@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { 
   Download, Upload, RefreshCw, Trash2, 
-  User, DollarSign, Bell, Shield, Check, AlertCircle 
+  User, DollarSign, Bell, Shield, Check, AlertCircle, FileText 
 } from 'lucide-react';
 import { UserSettings } from '../types';
 import { exportAppData, importAppData, INITIAL_SAMPLE_LOANS, INITIAL_SAMPLE_PAYMENTS, DEFAULT_SETTINGS } from '../utils/storage';
@@ -12,6 +12,7 @@ interface SettingsViewProps {
   onUpdateSettings: (newSettings: Partial<UserSettings>) => void;
   onReloadData: () => void;
   onOpenNotifications: () => void;
+  onOpenPdfExport?: () => void;
 }
 
 const CURRENCIES = [
@@ -30,6 +31,7 @@ export default function SettingsView({
   onUpdateSettings,
   onReloadData,
   onOpenNotifications,
+  onOpenPdfExport,
 }: SettingsViewProps) {
   const [userName, setUserName] = useState(settings.userName || '');
   const [monthlyIncome, setMonthlyIncome] = useState<number>(settings.monthlyIncome || 100000);
@@ -236,6 +238,16 @@ export default function SettingsView({
             <Check className="w-4 h-4" />
             <span>{importStatus}</span>
           </div>
+        )}
+
+        {onOpenPdfExport && (
+          <button
+            onClick={onOpenPdfExport}
+            className="w-full p-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 font-bold flex items-center justify-center gap-2 transition active:scale-98"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Generate Official PDF Statement</span>
+          </button>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">

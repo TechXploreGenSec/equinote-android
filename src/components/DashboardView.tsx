@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { 
   Calendar, CheckCircle2, Clock, AlertTriangle, ArrowUpRight, 
-  Plus, Check, ChevronRight, TrendingDown 
+  Plus, Check, ChevronRight, TrendingDown, FileText
 } from 'lucide-react';
 import { LoanItem, UserSettings } from '../types';
 import { calculateDueStatus } from '../utils/storage';
@@ -17,6 +17,7 @@ interface DashboardViewProps {
   onGoToLoans: () => void;
   onGoToSimulators: () => void;
   onGoToSettings: () => void;
+  onOpenPdfExport: () => void;
 }
 
 export default function DashboardView({
@@ -28,6 +29,7 @@ export default function DashboardView({
   onGoToLoans,
   onGoToSimulators,
   onGoToSettings,
+  onOpenPdfExport,
 }: DashboardViewProps) {
   const currentMonthName = new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const currentMonthYearStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
@@ -124,13 +126,24 @@ export default function DashboardView({
           </h2>
         </div>
 
-        <button
-          onClick={onOpenAddLoan}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition shadow-md shadow-emerald-950/30 active:scale-95"
-        >
-          <Plus className="w-4 h-4 stroke-[2.5]" />
-          <span>New EMI</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenPdfExport}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 text-xs font-semibold transition active:scale-95"
+            title="Download PDF Statement"
+          >
+            <FileText className="w-3.5 h-3.5 text-emerald-400" />
+            <span>PDF Statement</span>
+          </button>
+
+          <button
+            onClick={onOpenAddLoan}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition shadow-md shadow-emerald-950/30 active:scale-95"
+          >
+            <Plus className="w-4 h-4 stroke-[2.5]" />
+            <span>New EMI</span>
+          </button>
+        </div>
       </div>
 
       {/* Monthly Outflow Summary Card */}

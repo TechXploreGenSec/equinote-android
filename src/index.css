@@ -1,10 +1,19 @@
 @import "tailwindcss";
 
 @layer base {
+  html {
+    background-color: #0f172a;
+  }
+
   body {
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
+    background-color: #020617;
+    /* Reserve space for notch / status bar on Android (edge-to-edge WebView).
+       With StatusBar overlaysWebView=false this is 0 and harmless;
+       with overlay true it pushes content below the notch. */
+    padding-top: env(safe-area-inset-top, 0px);
   }
 
   code, pre, .font-mono {
@@ -12,13 +21,29 @@
   }
 }
 
+/* Sticky app header that always clears the notch + status bar */
+.app-header-safe {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+}
+
+/* Fallback for WebViews that don't expose safe-area-insets:
+   keep at least 28px clearance so the brand row never sits under the notch. */
+@supports not (padding-top: env(safe-area-inset-top)) {
+  .app-header-safe {
+    padding-top: 28px;
+  }
+}
+
 /* Mobile safe area utility classes */
 .pb-safe {
-  padding-bottom: env(safe-area-inset-bottom, 16px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 16px);
 }
 
 .pt-safe {
-  padding-top: env(safe-area-inset-top, 16px);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
 }
 
 /* Custom sleek scrollbar */
@@ -36,4 +61,36 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* Print stylesheet for crisp PDF printing */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 10pt !important;
+  }
+
+  header, nav, .no-print {
+    display: none !important;
+  }
+
+  .print-area {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+}
+
 

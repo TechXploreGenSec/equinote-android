@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { 
   X, Calendar, Landmark, Percent, Clock, 
   Trash2, Edit3, ArrowRight, CheckCircle,
-  FileCheck2, CheckSquare, Square
+  FileCheck2, CheckSquare, Square, FileText
 } from 'lucide-react';
 import { LoanItem, UserSettings, PaymentRecord } from '../types';
 import { formatCurrency, calculateRemainingBalance, calculateTotalInterest } from '../utils/finance';
@@ -19,6 +19,7 @@ interface LoanDetailModalProps {
   onToggleClose: (loan: LoanItem) => void;
   onPrepaySimulate: (loan: LoanItem) => void;
   onOpenPayModal: (loan: LoanItem) => void;
+  onExportPdf?: (loan: LoanItem) => void;
 }
 
 export default function LoanDetailModal({
@@ -31,6 +32,7 @@ export default function LoanDetailModal({
   onToggleClose,
   onPrepaySimulate,
   onOpenPayModal,
+  onExportPdf,
 }: LoanDetailModalProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>(() => {
@@ -294,17 +296,29 @@ export default function LoanDetailModal({
             </div>
           )}
 
-          {/* Simulation CTA */}
-          <button
-            onClick={() => {
-              onClose();
-              onPrepaySimulate(loan);
-            }}
-            className="w-full py-3 px-4 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95"
-          >
-            <span>Simulate Prepayment Savings for this Loan</span>
-            <ArrowRight className="w-4 h-4" />
-          </button>
+          {/* Action CTAs */}
+          <div className="space-y-2 pt-1">
+            {onExportPdf && (
+              <button
+                onClick={() => onExportPdf(loan)}
+                className="w-full py-2.5 px-4 rounded-2xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-200 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95"
+              >
+                <FileText className="w-4 h-4 text-emerald-400" />
+                <span>Export Loan Dossier (PDF)</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                onClose();
+                onPrepaySimulate(loan);
+              }}
+              className="w-full py-3 px-4 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95"
+            >
+              <span>Simulate Prepayment Savings for this Loan</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Footer Actions */}

@@ -41,7 +41,7 @@ export default function Navbar({
   }).length;
 
   return (
-    <header className="sticky top-0 z-30 bg-slate-950/85 backdrop-blur-md border-b border-slate-800/80 px-4 py-3">
+    <header className="app-header-safe bg-slate-950/95 backdrop-blur-md border-b border-slate-800/80 px-4 pb-3">
       <div className="max-w-2xl mx-auto flex items-center justify-between">
         {/* Brand */}
         <div className="flex items-center gap-2.5">
