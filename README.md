@@ -1,5 +1,9 @@
 # EquiNote — EMI & Loan Tracker (Android, Offline-First)
 
+> ✅ **Stable version: v3.0.5** — [download the stable APK](../../releases/tag/v3.0.5).
+> The `stable` branch and `stable` tag are pinned to v3.0.5 and never move
+> except for a deliberate stable release.
+
 Offline-first personal EMI and loan management companion with upcoming payment radar,
 smart notification reminders, one-time pay notes, **PDF Extract & Statement export**
 (portfolio statement / single-loan dossier, landscape or portrait, with payment ledger),
