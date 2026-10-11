@@ -29,6 +29,7 @@ import {
 } from './utils/storage';
 import { showSystemNotification, playChimeSound } from './utils/notifications';
 import { ensureNotificationPermission, scheduleDueReminders, getPermissionStatus, SETTINGS_HINT } from './utils/nativeNotifications';
+import { todayStr as todayIST } from './utils/datetime';
 
 export default function App() {
   const [loans, setLoans] = useState<LoanItem[]>(() => {
@@ -336,8 +337,8 @@ export default function App() {
 
   const reminderCount = useMemo(() => {
     const monthStr = currentMonthYear();
-    const todayStr = new Date().toISOString().split('T')[0];
-    return reminders.filter((r) => r.doneMonthYear !== monthStr && r.dueDate <= todayStr).length;
+    const today = todayIST();
+    return reminders.filter((r) => r.doneMonthYear !== monthStr && r.dueDate <= today).length;
   }, [reminders]);
 
   const handleEnableNotifications = useCallback(async () => {

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { LoanItem, ReminderItem, ExpenseItem, UserSettings } from '../types';
 import { calculateDueStatus, currentMonthYear, nextMonthYear } from '../utils/storage';
+import { todayStr as todayIST } from '../utils/datetime';
 import { formatCurrency, calculateRemainingBalance } from '../utils/finance';
 import { CATEGORIES } from '../utils/categories';
 
@@ -155,7 +156,7 @@ export default function DashboardView({
 
   // Today's + this month's spends
   const spendTotals = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIST();
     let todayTotal = 0;
     let monthTotal = 0;
     for (const e of expenses) {

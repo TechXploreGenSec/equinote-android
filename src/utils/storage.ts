@@ -1,5 +1,6 @@
 import { LoanItem, LoanCategory, PaymentRecord, UserSettings, AppNotification, ReminderItem, ExpenseAccount, ExpenseItem } from '../types';
 import { calculateEmi, calculatePrincipalFromEmi } from './finance';
+import { monthPrefix as monthPrefixIST } from './datetime';
 
 const STORAGE_KEYS = {
   LOANS: 'equinote_loans_v1',
@@ -168,12 +169,14 @@ export function saveReminders(reminders: ReminderItem[]) {
   }
 }
 
-export function currentMonthYear(date: Date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+export function currentMonthYear(date?: Date): string {
+  return monthPrefixIST(date);
 }
 
-export function nextMonthYear(date: Date = new Date()): string {
-  const d = new Date(date.getFullYear(), date.getMonth() + 1, 1);
+export function nextMonthYear(date?: Date): string {
+  const base = monthPrefixIST(date);
+  const [y, m] = base.split('-').map(Number);
+  const d = new Date(y, m, 1); // month is 1-indexed here -> next month
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 

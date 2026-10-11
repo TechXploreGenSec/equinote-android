@@ -7,10 +7,12 @@ import {
 import { ExpenseItem, ExpenseAccount, ExpenseCategory, ExpenseAccountKind, UserSettings } from '../types';
 import { formatCurrency } from '../utils/finance';
 import {
-  isSmsSupported, ensureSmsPermission, readInboxSms,
+  isSmsSupported, ensureSmsPermission, readInboxSmsThisMonth,
   filterDebitCandidates, filterByUserBanks,
   suggestExpenseTitle, SpendCandidate,
 } from '../utils/smsImport';
+import { monthRangeLabel, todayStr as todayIST, monthPrefix as monthPrefixIST } from '../utils/datetime';
+import { senderIdsForBankName } from '../utils/bankDirectory';
 
 interface ExpensesViewProps {
   expenses: ExpenseItem[];
@@ -61,8 +63,11 @@ function accountIcon(kind: ExpenseAccountKind) {
   }
 }
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
+function defaultDueDate(): string {
+  const now = new Date();
+  // Default to the 5th of next month as the pay note
+  const d = new Date(now.getFullYear(), now.getMonth() + 1, 5);
+  return d.toISOString().split('T')[0];
 }
 
 interface SmsRow extends SpendCandidate {
@@ -85,7 +90,7 @@ export default function ExpensesView({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(todayIST());
   const [category, setCategory] = useState<ExpenseCategory>('food');
   const [accountId, setAccountId] = useState('');
   const [reason, setReason] = useState('');
@@ -103,10 +108,10 @@ export default function ExpensesView({
   const [smsRows, setSmsRows] = useState<SmsRow[]>([]);
   const [isScanning, setIsScanning] = useState(false);
 
-  const monthPrefix = todayStr().slice(0, 7);
+  const monthPrefix = monthPrefixIST();
 
   const { todayTotal, monthTotal } = useMemo(() => {
-    const t = todayStr();
+    const t = todayIST();
     let today = 0;
     let month = 0;
     for (const e of expenses) {
@@ -146,7 +151,7 @@ export default function ExpensesView({
   const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name || '—';
 
   const resetExpenseForm = () => {
-    setTitle(''); setAmount(''); setDate(todayStr());
+    setTitle(''); setAmount(''); setDate(todayIST());
     setCategory('food'); setAccountId(''); setReason('');
   };
 
@@ -200,15 +205,16 @@ export default function ExpensesView({
         setSmsStatus('SMS permission denied. Allow it in Android Settings → Apps → EquiNote → SMS, then scan again.');
         return;
       }
-      setSmsStatus('Reading inbox… (stays on your phone)');
-      const messages = await readInboxSms(200, 45);
+      setSmsStatus('Reading this month’s inbox… (stays on your phone)');
+      const messages = await readInboxSmsThisMonth(300);
       const { loadImportedSmsIds } = await import('../utils/storage');
       const { debits, skippedCredits } = filterDebitCandidates(messages, loadImportedSmsIds());
+      const range = monthRangeLabel();
       if (debits.length === 0) {
         setSmsStatus(
           messages.length === 0
-            ? 'No SMS in the last 45 days.'
-            : `Scanned ${messages.length} SMS — no new spendings found${skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : ''}.`
+            ? `No SMS from ${range}.`
+            : `Scanned ${messages.length} SMS (${range}) — no new spendings found${skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : ''}.`
         );
         setSmsRows([]);
         return;
@@ -216,7 +222,7 @@ export default function ExpensesView({
       const { mine, others, filtered } = filterByUserBanks(debits, accounts);
       if (mine.length === 0) {
         setSmsStatus(
-          `Scanned ${messages.length} SMS, found ${debits.length} spending${debits.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
+          `Scanned ${messages.length} SMS (${range}), found ${debits.length} spending${debits.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
         );
         setSmsRows([]);
         return;
@@ -229,7 +235,7 @@ export default function ExpensesView({
         accountId: accountId || accounts[0]?.id || '',
       })));
       setSmsStatus(
-        `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''}` +
+        `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''} (${range})` +
         (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
         (skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : '') +
         '. Confirm each new spend below — names are kept exactly as the SMS mentions them, reason optional.' +
@@ -374,7 +380,16 @@ export default function ExpensesView({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <input
-                type="text" value={accBankName} onChange={(e) => setAccBankName(e.target.value)}
+                type="text" value={accBankName}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setAccBankName(v);
+                  // Auto-suggest sender IDs from the built-in bank directory.
+                  if (!accSenderIds.trim()) {
+                    const ids = senderIdsForBankName(v);
+                    if (ids.length > 0) setAccSenderIds(ids.join(', '));
+                  }
+                }}
                 placeholder="Bank name, e.g. HDFC Bank"
                 className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500"
               />
@@ -578,7 +593,7 @@ export default function ExpensesView({
                 className="w-full py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 font-bold transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <MessageSquareText className="w-4 h-4" />
-                <span>{isScanning ? 'Scanning…' : smsRows.length > 0 ? 'Scan again' : 'Scan last 45 days'}</span>
+                <span>{isScanning ? 'Scanning…' : smsRows.length > 0 ? 'Scan again' : 'Scan this month'}</span>
               </button>
 
               {smsStatus && (

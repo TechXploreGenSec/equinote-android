@@ -6,6 +6,7 @@ import {
 import { ReminderItem, ReminderKind, UserSettings } from '../types';
 import { formatCurrency } from '../utils/finance';
 import { currentMonthYear } from '../utils/storage';
+import { todayStr as todayIST } from '../utils/datetime';
 
 interface RemindersViewProps {
   reminders: ReminderItem[];
@@ -44,7 +45,7 @@ export default function RemindersView({
   const [note, setNote] = useState('');
 
   const monthYear = currentMonthYear();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = todayIST();
 
   const sorted = useMemo(() => {
     return [...reminders].sort((a, b) => a.dueDate.localeCompare(b.dueDate));

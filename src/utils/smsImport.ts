@@ -1,5 +1,7 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import { ExpenseAccount } from '../types';
+import { todayStr, monthStartMillis } from './datetime';
+import { brandOfSender, senderIdsForBankName } from './bankDirectory';
 
 export interface SmsMessage {
   id: string;
@@ -42,6 +44,12 @@ export async function readInboxSms(limit = 200, sinceDays = 45): Promise<SmsMess
   return res.messages || [];
 }
 
+/** Inbox scan for the current calendar month only (1st → today, India time). */
+export async function readInboxSmsThisMonth(limit = 300): Promise<SmsMessage[]> {
+  const res = await SmsReader.readInbox({ limit, since: monthStartMillis() });
+  return res.messages || [];
+}
+
 export type SpendDirection = 'debit' | 'credit' | 'unknown';
 
 export interface SpendCandidate {
@@ -60,6 +68,9 @@ const DEBIT_RE = /debited|debit\b|\bdr\.?\b|spent|paid|withdrawn|withdrawal|purc
 const CREDIT_RE = /credited|credit\b|\bcr\.?\b|received|refund|cashback|deposited/i;
 const OTP_RE = /\botp\b|one[\s-]?time[\s-]?password|verification code/i;
 const ACCOUNT_RE = /(?:a\/c|ac\b|account|acct|card|xx|x{2,}|ending|no\.?)\s?[^\d]{0,8}(\d{4})/i;
+// Ads/offers: amount present but no money-movement signal -> not a spend.
+const PROMO_RE = /% off|discount|sale is|mega sale|limited period|hurry|grab the deal|apply now to get|click here to (buy|shop|avail)|promo(code)?|advertisement|recharge with|recharge now|extra data|plan.*validity|dth.*recharge|offer valid|t&c apply/i;
+const TXN_SIGNAL_RE = /debited|credited|\bdr\.?\b|\bcr\.?\b|spent|paid|withdraw|purchase|upi|txn|transaction|neft|imps|rtgs|nach|mandate|\ba\/c\b|account|card|xx\d|x{2,}\d|balance|\bavl\b|available|statement|\bdue\b|bill|emi/i;
 
 /** Payee after to/at/towards — first ~3 words, e.g. "to Mr V GOKUL P:" -> "Mr V GOKUL". */
 const TO_AT_RE = /\b(?:to|at|towards)\s+([A-Za-z][A-Za-z0-9 .&'_-]{1,48})/i;
@@ -124,6 +135,9 @@ export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
   // OTP / verification codes are never spends.
   OTP_RE.lastIndex = 0;
   if (OTP_RE.test(body)) return null;
+  // Promotional noise ("50% off, recharge now!") is never a spend.
+  PROMO_RE.lastIndex = 0;
+  if (PROMO_RE.test(body)) return null;
 
   const amount = pickAmount(body);
   if (!amount) return null;
@@ -135,12 +149,17 @@ export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
   const hasCredit = CREDIT_RE.test(body);
   const direction: SpendDirection =
     hasDebit && !hasCredit ? 'debit' : !hasDebit && hasCredit ? 'credit' : hasDebit ? 'debit' : 'unknown';
+  if (direction === 'unknown') {
+    // Amount without any money-movement signal (e.g. ads) -> skip.
+    TXN_SIGNAL_RE.lastIndex = 0;
+    if (!TXN_SIGNAL_RE.test(body)) return null;
+  }
 
   const acc = ACCOUNT_RE.exec(body);
   const merch = extractPayee(body);
   const d = new Date(msg.date);
   const dateStr = Number.isNaN(d.getTime())
-    ? new Date().toISOString().split('T')[0]
+    ? todayStr()
     : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   return {
@@ -194,6 +213,13 @@ function splitSenderIds(raw?: string): string[] {
     .filter((s) => s.length >= 3);
 }
 
+/** Explicit sender ids + directory-implied ids from the account's bank name. */
+function accountSenderIds(acc: ExpenseAccount): string[] {
+  const ids = new Set(splitSenderIds(acc.senderIds));
+  for (const implied of senderIdsForBankName(acc.bankName)) ids.add(implied);
+  return [...ids];
+}
+
 function bankNameTokens(bankName?: string): string[] {
   return (bankName || '')
     .toLowerCase()
@@ -232,13 +258,15 @@ export function filterByUserBanks(
   const mine: BankMatch[] = [];
   let others = 0;
   for (const candidate of candidates) {
-    const senderU = (candidate.sender || '').toUpperCase();
+    const brand = brandOfSender(candidate.sender);
     let accountId: string | undefined;
     let matched = false;
 
     for (const acc of accounts) {
-      const ids = splitSenderIds(acc.senderIds);
-      if (ids.some((id) => senderU.includes(id))) {
+      // Sender-id hit against the normalized brand token too
+      // (JD-HDFCBK-S and JD-HDFCBK both match HDFCBK).
+      const ids = accountSenderIds(acc);
+      if (ids.some((id) => brand.includes(id) || id.includes(brand) && brand.length >= 4)) {
         matched = true;
         accountId = accountId || acc.id;
       }
@@ -249,7 +277,7 @@ export function filterByUserBanks(
       }
       if (!matched) {
         const tokens = bankNameTokens(acc.bankName);
-        if (tokens.some((t) => senderU.includes(t.toUpperCase()))) {
+        if (tokens.some((t) => brand.includes(t.toUpperCase()))) {
           matched = true;
           accountId = accountId || acc.id;
         }

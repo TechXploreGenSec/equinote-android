@@ -53,6 +53,17 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.1.0-beta.4 changelog (scan you asked for)
+
+- **This month only** — scan covers the 1st → today (e.g. Oct 1 – Oct 11 =
+  11 days), with today computed in India time instead of UTC.
+- **No ad noise** — promo/offer/recharge-ad SMS are excluded; amount-only
+  messages without any transaction signal are skipped too.
+- **Bank directory (60+ Indian banks & wallets)** — typing a bank name
+  auto-fills its sender IDs (IDFC → IDFCFB/111101, Canara → CANBNK/CNRB,
+  Amazon Pay → AMAZON/AMZNPAY, …); sender headers are normalized
+  (`JD-HDFCBK-S` → `HDFCBK`) before matching your accounts.
+
 ## v3.1.0-beta.3 changelog (SMS format hardening)
 
 - **More bank formats** — `Dr.`/`Cr.` direction markers, payee names after
