@@ -53,6 +53,16 @@ cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
+## v3.1.0-beta.5 changelog (AI reason analysis)
+
+- **Groq free-tier reason AI** — key + model configurable in Settings
+  (free key at `console.groq.com`, tested in-app). One batched call fills
+  exact names + reasons for every scanned SMS row; manual adds get a
+  "Suggest with AI" button.
+- **Fragment-only privacy** — on-device splitting first; only
+  merchant + amount + date fragments are sent, full SMS text never leaves
+  the phone.
+
 ## v3.1.0-beta.4 changelog (scan you asked for)
 
 - **This month only** — scan covers the 1st → today (e.g. Oct 1 – Oct 11 =

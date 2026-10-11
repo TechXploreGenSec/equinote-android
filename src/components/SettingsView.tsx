@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react';
 import {
   Download, Upload, Trash2,
-  User, DollarSign, Bell, Shield, Check, FileText
+  User, DollarSign, Bell, Shield, Check, FileText, Sparkles
 } from 'lucide-react';
 import { UserSettings } from '../types';
 import { exportAppData, importAppData } from '../utils/storage';
 import { downloadTextFile } from '../utils/shareFile';
+import { DEFAULT_GROQ_MODEL, testGroqKey } from '../utils/aiReason';
 import { formatCurrency } from '../utils/finance';
 
 interface SettingsViewProps {
@@ -39,6 +40,11 @@ export default function SettingsView({
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [groqKey, setGroqKey] = useState(settings.groqApiKey || '');
+  const [groqModel, setGroqModel] = useState(settings.groqModel || DEFAULT_GROQ_MODEL);
+  const [groqTest, setGroqTest] = useState<string | null>(null);
+  const [groqTesting, setGroqTesting] = useState(false);
+  const [groqSaved, setGroqSaved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSaveProfile = (e: React.FormEvent) => {
@@ -59,6 +65,21 @@ export default function SettingsView({
         currencySymbol: found.symbol,
       });
     }
+  };
+
+  const handleSaveGroq = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateSettings({ groqApiKey: groqKey.trim(), groqModel: groqModel.trim() || DEFAULT_GROQ_MODEL });
+    setGroqSaved(true);
+    setTimeout(() => setGroqSaved(false), 2000);
+  };
+
+  const handleTestGroq = async () => {
+    setGroqTesting(true);
+    setGroqTest(null);
+    const res = await testGroqKey(groqKey, groqModel.trim() || DEFAULT_GROQ_MODEL);
+    setGroqTest(res.message);
+    setGroqTesting(false);
   };
 
   const handleExportData = async () => {
@@ -217,6 +238,64 @@ export default function SettingsView({
           Configure
         </button>
       </div>
+
+      {/* AI Reason Analysis (Groq free tier) */}
+      <form onSubmit={handleSaveGroq} className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-violet-400" />
+          <h3 className="font-bold text-white text-xs uppercase tracking-wider">
+            AI Reason Analysis · Groq (free)
+          </h3>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed">
+          Get a free key at <span className="font-mono text-slate-300">console.groq.com</span> (free tier, no card).
+          Only merchant + amount + date fragments ever leave your phone — full SMS text never does.
+        </p>
+        <div>
+          <label className="block text-[11px] text-slate-400 mb-1">Groq API key (stored only on this device)</label>
+          <input
+            type="password"
+            value={groqKey}
+            onChange={(e) => setGroqKey(e.target.value)}
+            placeholder="gsk_…"
+            autoComplete="off"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-violet-500"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] text-slate-400 mb-1">Model</label>
+          <input
+            type="text"
+            value={groqModel}
+            onChange={(e) => setGroqModel(e.target.value)}
+            placeholder={DEFAULT_GROQ_MODEL}
+            autoComplete="off"
+            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-violet-500"
+          />
+        </div>
+        {groqTest && (
+          <p className="text-[11px] leading-relaxed bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-300">
+            {groqTest}
+          </p>
+        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl bg-violet-500 hover:bg-violet-400 text-white font-bold text-xs transition active:scale-95 flex items-center gap-1.5"
+          >
+            {groqSaved && <Check className="w-3.5 h-3.5 stroke-[2.5]" />}
+            <span>{groqSaved ? 'Saved' : 'Save Key'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleTestGroq}
+            disabled={groqTesting || !groqKey.trim()}
+            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs transition disabled:opacity-40"
+          >
+            {groqTesting ? 'Testing…' : 'Test Key'}
+          </button>
+        </div>
+      </form>
 
       {/* Data Management & Offline Storage */}
       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">

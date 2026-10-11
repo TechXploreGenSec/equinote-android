@@ -23,6 +23,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   notificationsEnabled: true,
   soundEnabled: true,
   userName: '',
+  groqApiKey: '',
+  groqModel: 'llama-3.3-70b-versatile',
 };
 
 // v3: no sample / temp data. Fresh installs start empty.

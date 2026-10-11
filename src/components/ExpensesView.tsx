@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import {
-  X, Plus, Trash2, Wallet, MessageSquareText, Check, ChevronDown,
+  X, Plus, Trash2, Wallet, MessageSquareText, Check, ChevronDown, Sparkles,
   UtensilsCrossed, Car, ShoppingBag, Receipt, HeartPulse, Clapperboard,
   CircleDashed, Landmark, CreditCard, Banknote, Smartphone,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ import {
 } from '../utils/smsImport';
 import { monthRangeLabel, todayStr as todayIST, monthPrefix as monthPrefixIST } from '../utils/datetime';
 import { senderIdsForBankName } from '../utils/bankDirectory';
+import { analyzeSpends, DEFAULT_GROQ_MODEL } from '../utils/aiReason';
 
 interface ExpensesViewProps {
   expenses: ExpenseItem[];
@@ -107,6 +108,8 @@ export default function ExpensesView({
   const [smsStatus, setSmsStatus] = useState<string | null>(null);
   const [smsRows, setSmsRows] = useState<SmsRow[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+  const [isAiFilling, setIsAiFilling] = useState(false);
+  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
 
   const monthPrefix = monthPrefixIST();
 
@@ -248,8 +251,80 @@ export default function ExpensesView({
     }
   };
 
-  const handleImportSms = () => {
-    const chosen = smsRows.filter((r) => r.selected);
+  const groqKey = settings.groqApiKey || '';
+  const groqModel = settings.groqModel || DEFAULT_GROQ_MODEL;
+
+  // One batched AI call fills exact names + reasons for every scanned row.
+  // Only merchant/amount/date fragments are sent — never the SMS text.
+  const handleAiFillReasons = async () => {
+    if (smsRows.length === 0) return;
+    if (!groqKey.trim()) {
+      setSmsStatus('Add your free Groq key in Settings → AI Reason Analysis first.');
+      return;
+    }
+    setIsAiFilling(true);
+    try {
+      const out = await analyzeSpends(
+        smsRows.map((r, i) => ({
+          index: i,
+          merchant: r.title || undefined,
+          sender: r.sender,
+          amount: r.amount,
+          date: r.date,
+          accountLast4: r.accountLast4,
+        })),
+        groqKey,
+        groqModel
+      );
+      setSmsRows((rows) =>
+        rows.map((row, i) => {
+          const hit = out.find((o) => o.index === i);
+          if (!hit) return row;
+          return {
+            ...row,
+            title: row.title.trim() ? row.title : hit.name,
+            reason: row.reason.trim() ? row.reason : hit.reason,
+          };
+        })
+      );
+      setSmsStatus(`AI filled ${out.length} row${out.length > 1 ? 's' : ''} — review, then import.`);
+    } catch (err) {
+      setSmsStatus(`AI fill failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsAiFilling(false);
+    }
+  };
+
+  // Single AI suggestion for a manually added (latest) spend.
+  const handleAiSuggestReason = async () => {
+    if (!groqKey.trim()) return;
+    if (!title.trim() && amount === '') return;
+    setIsAiSuggesting(true);
+    try {
+      const out = await analyzeSpends(
+        [{
+          index: 0,
+          merchant: title.trim() || undefined,
+          sender: 'manual',
+          amount: Number(amount) || 0,
+          date: date || todayIST(),
+        }],
+        groqKey,
+        groqModel
+      );
+      const hit = out[0];
+      if (hit) {
+        if (!title.trim() && hit.name) setTitle(hit.name);
+        if (hit.reason) setReason(hit.reason);
+      }
+    } catch {
+      // Silent — the field stays manual.
+    } finally {
+      setIsAiSuggesting(false);
+    }
+  };
+
+  const handleImportSms = () => {    const chosen = smsRows.filter((r) => r.selected);
     if (chosen.length === 0) {
       setSmsStatus('Select at least one spending to import.');
       return;
@@ -560,7 +635,22 @@ export default function ExpensesView({
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Reason *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-400">
+                    Reason *
+                  </label>
+                  {groqKey.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleAiSuggestReason}
+                      disabled={isAiSuggesting}
+                      className="text-[10px] font-bold text-violet-300 hover:underline flex items-center gap-1 disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      <span>{isAiSuggesting ? 'Thinking…' : 'Suggest with AI'}</span>
+                    </button>
+                  )}
+                </div>
                 <input type="text" required minLength={2} value={reason} onChange={(e) => setReason(e.target.value)}
                   placeholder="e.g. Team lunch after deployment"
                   className="w-full bg-slate-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500" />
@@ -600,6 +690,28 @@ export default function ExpensesView({
                 <p className="text-[11px] leading-relaxed bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-300">
                   {smsStatus}
                 </p>
+              )}
+
+              {smsRows.length > 0 && (
+                <>
+                  <button
+                    onClick={handleAiFillReasons}
+                    disabled={isAiFilling}
+                    className="w-full py-2.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>
+                      {isAiFilling
+                        ? 'AI analyzing… (one batched call)'
+                        : groqKey.trim()
+                          ? '✨ AI fill exact names + reasons (one go)'
+                          : '✨ AI fill — add free Groq key in Settings'}
+                    </span>
+                  </button>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    AI sees only merchant + amount + date fragments — your full SMS text never leaves the phone.
+                  </p>
+                </>
               )}
 
               {smsRows.map((r, i) => (

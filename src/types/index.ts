@@ -52,6 +52,9 @@ export interface UserSettings {
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   userName: string;
+  /** Groq free-tier key for AI reason analysis (stored only on this device). */
+  groqApiKey?: string;
+  groqModel?: string;
 }
 
 export interface AppNotification {
