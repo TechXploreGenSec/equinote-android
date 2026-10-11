@@ -98,9 +98,9 @@ export default function LoansView({
   const handleDownloadLoansExample = async () => {
     try {
       await downloadTextFile('EquiNote_Loans_Example.csv', LOANS_CSV_EXAMPLE, 'EquiNote Example');
-    } catch {
-      setImportStatus('Example download failed — please retry.');
-      setTimeout(() => setImportStatus(null), 6000);
+    } catch (err) {
+      setImportStatus(`Example download failed: ${err instanceof Error ? err.message : String(err)}`);
+      setTimeout(() => setImportStatus(null), 8000);
     }
   };
 

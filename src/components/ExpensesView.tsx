@@ -232,7 +232,7 @@ export default function ExpensesView({
         `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''}` +
         (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
         (skippedCredits > 0 ? ` (${skippedCredits} credits ignored)` : '') +
-        '. Add a reason for each, then import.' +
+        '. Confirm each new spend below — names are kept exactly as the SMS mentions them.' +
         (!filtered ? ' Tip: add sender IDs in My accounts to filter only your banks.' : '')
       );
     } catch (err) {
@@ -602,7 +602,9 @@ export default function ExpensesView({
                         <Check className="w-3.5 h-3.5 stroke-[3]" />
                       </span>
                       <span className="font-extrabold text-white font-mono">{formatCurrency(r.amount, settings.currencySymbol)}</span>
-                      <span className="text-[10px] text-slate-400 truncate">{r.date}{r.accountLast4 ? ` · ·${r.accountLast4}` : ''}</span>
+                      <span className="text-[10px] text-slate-400 truncate">
+                        {r.date}{r.accountLast4 ? ` · ·${r.accountLast4}` : ''} · <span className="font-mono text-sky-400/90">{r.sender}</span>
+                      </span>
                     </button>
                   </div>
                   <input

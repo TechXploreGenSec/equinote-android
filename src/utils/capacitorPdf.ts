@@ -1,17 +1,17 @@
 import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
-import { isNative as isNativeAndroid } from './shareFile';
+import { isNative as isNativeAndroid, realErrorMessage } from './shareFile';
 import type jsPDF from 'jspdf';
 
 export { isNativeAndroid };
 
 export function friendlyNativeError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (/not implemented|not available|unavailable/i.test(msg)) {
+  const msg = realErrorMessage(e);
+  if (/not implemented|not available|unavailable|bridge missing/i.test(msg)) {
     return 'Native file bridge missing in this build — please reinstall the latest APK from Releases.';
   }
-  return `Save failed (${msg}). The file could not be written — please retry.`;
+  return `Save failed: ${msg}`;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -41,20 +41,41 @@ export async function savePdfNative(doc: jsPDF, filename: string): Promise<boole
   const safeName = filename.endsWith('.pdf') ? filename : `${filename}.pdf`;
   const output = doc.output('arraybuffer') as ArrayBuffer;
   const base64 = arrayBufferToBase64(output);
-  const saved = await Filesystem.writeFile({
-    path: safeName,
-    data: base64,
-    directory: Directory.Documents,
-  });
+  let savedUri = '';
+  let location = '';
+  try {
+    const saved = await Filesystem.writeFile({
+      path: safeName,
+      data: base64,
+      directory: Directory.Documents,
+    });
+    savedUri = saved.uri;
+    location = `Documents/${safeName}`;
+  } catch (e) {
+    try {
+      const saved = await Filesystem.writeFile({
+        path: safeName,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      savedUri = saved.uri;
+      location = `app cache/${safeName}`;
+    } catch {
+      throw new Error(`could not save PDF (${realErrorMessage(e)})`);
+    }
+  }
   try {
     await Share.share({
       title: 'EquiNote Statement',
-      text: `Your EquiNote statement (${safeName})`,
-      url: saved.uri,
+      text: `Your EquiNote statement (${safeName}) — saved at ${location}`,
+      url: savedUri,
       dialogTitle: 'Save / Share PDF Statement',
     });
-  } catch {
-    // Share dismissed — file is still in Documents.
+  } catch (e) {
+    const msg = realErrorMessage(e).toLowerCase();
+    if (!/dismiss|cancel|no activity/i.test(msg)) {
+      throw new Error(`share sheet failed (${realErrorMessage(e)}). PDF is saved at ${location}.`);
+    }
   }
   return true;
 }

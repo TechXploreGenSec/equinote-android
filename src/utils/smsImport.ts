@@ -147,8 +147,10 @@ export function filterDebitCandidates(
 }
 
 export function suggestExpenseTitle(c: SpendCandidate): string {
+  // Keep the name exactly as the SMS mentions it: merchant text first,
+  // otherwise the raw sender id untouched (e.g. "JD-HDFCBK" stays as-is).
   if (c.merchant) return c.merchant;
-  const sender = (c.sender || '').replace(/^[A-Z]{2}-/, '');
+  const sender = (c.sender || '').trim();
   if (sender && !/^\d+$/.test(sender)) return sender;
   return 'SMS spend';
 }

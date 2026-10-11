@@ -64,16 +64,16 @@ export default function SettingsView({
   const handleExportData = async () => {
     try {
       const jsonStr = exportAppData();
-      await downloadTextFile(
+      const saved = await downloadTextFile(
         `EquiNote_Backup_${new Date().toISOString().split('T')[0]}.json`,
         jsonStr,
         'EquiNote Backup'
       );
-      setExportStatus('Backup saved — check Documents / Share sheet on Android.');
-    } catch {
-      setExportStatus('Export failed. Please try again.');
+      setExportStatus(`Backup saved at ${saved.location} — use the share sheet to keep a copy.`);
+    } catch (err) {
+      setExportStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    setTimeout(() => setExportStatus(null), 5000);
+    setTimeout(() => setExportStatus(null), 8000);
   };
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {

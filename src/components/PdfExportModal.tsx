@@ -388,7 +388,9 @@ export default function PdfExportModal({
                 {downloadSuccess ? (
                   <>
                     <Check className="w-4 h-4 text-emerald-400" />
-                    <span className="text-emerald-400 font-bold">Downloaded .PDF File!</span>
+                    <span className="text-emerald-400 font-bold">
+                      {onNative ? 'Saved to Documents + Share sheet!' : 'Downloaded .PDF File!'}
+                    </span>
                   </>
                 ) : isGenerating ? (
                   <span>Generating Document...</span>
