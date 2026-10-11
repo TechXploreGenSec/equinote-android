@@ -1,0 +1,6 @@
+{
+  "name": "EquiNote - EMI & Loan Tracker",
+  "description": "Offline-first personal EMI and loan management companion with upcoming payment radar, prepayment simulator, and smart notification reminders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,92 @@
+name: Android Build (Debug APK + Release)
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build web (dist/)
+        run: npm run build
+
+      - name: Capacitor - add + sync Android
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Rename APK
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          ls -lh "$APK"
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            TAG="main-${GITHUB_SHA::7}"
+          fi
+          mkdir -p release-apk
+          cp "$APK" "release-apk/EquiNote-${TAG}-debug.apk"
+          ls -lh release-apk/
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: EquiNote-debug-apk
+          path: release-apk/*.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release (tags v* only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-apk/*.apk
+          generate_release_notes: true
+          body: |
+            ## EquiNote ${{ github.ref_name }} (Android, offline-local)
+
+            Download `EquiNote-${{ github.ref_name }}-debug.apk` below and install on Android
+            (allow "Install unknown apps" when prompted).
+
+            - 100% offline: all EMI/loan data stays on-device (localStorage)
+            - No account, no server, no API keys needed
+            - Built via GitHub Actions: Vite web build + Capacitor + Gradle assembleDebug
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

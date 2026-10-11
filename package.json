@@ -1,0 +1,41 @@
+{
+  "name": "equinote-android",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "EquiNote - Offline-first EMI & Loan Tracker (Android wrapper via Capacitor)",
+  "scripts": {
+    "dev": "vite --port=3000 --host=0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "cap:sync": "cap sync",
+    "cap:open:android": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
+    "canvas-confetti": "^1.9.4",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^8.3.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "autoprefixer": "^10.4.21",
+    "esbuild": "^0.28.2",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.21.0",
+    "typescript": "^7.0.2",
+    "vite-plugin-pwa": "^2.0.0"
+  }
+}

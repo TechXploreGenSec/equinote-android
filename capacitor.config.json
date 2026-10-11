@@ -1,0 +1,13 @@
+{
+  "appId": "com.equinote.tracker",
+  "appName": "EquiNote",
+  "webDir": "dist",
+  "backgroundColor": "#0f172a",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  }
+}
