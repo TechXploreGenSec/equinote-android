@@ -68,9 +68,14 @@ const DEBIT_RE = /debited|debit\b|\bdr\.?\b|spent|paid|withdrawn|withdrawal|purc
 const CREDIT_RE = /credited|credit\b|\bcr\.?\b|received|refund|cashback|deposited/i;
 const OTP_RE = /\botp\b|one[\s-]?time[\s-]?password|verification code/i;
 const ACCOUNT_RE = /(?:a\/c|ac\b|account|acct|card|xx|x{2,}|ending|no\.?)\s?[^\d]{0,8}(\d{4})/i;
-// Ads/offers: amount present but no money-movement signal -> not a spend.
-const PROMO_RE = /% off|discount|sale is|mega sale|limited period|hurry|grab the deal|apply now to get|click here to (buy|shop|avail)|promo(code)?|advertisement|recharge with|recharge now|extra data|plan.*validity|dth.*recharge|offer valid|t&c apply/i;
+// Ads/offers/loan-pitches: amounts present but no money moved -> never a record.
+// Covers discount spam AND loan/credit-card pitches ("Rs 10 lakh loan @ 10%",
+// "pre-approved", "you are eligible") which otherwise look transactional.
+const PROMO_RE = /% off|discount|sale is|mega sale|limited period|hurry|grab the deal|apply now to get|click here to (buy|shop|avail)|promo(code)?|advertisement|recharge with|recharge now|extra data|plan.*validity|dth.*recharge|offer valid|t&c apply|congratulations|you are eligible|you're eligible|eligible for|pre[-\s]?approved|pre[-\s]?qualified|instant loan|personal loan|home loan|car loan|lakh loan|crore loan|loan of rs|rs.*lakh.*loan|loan.*@ ?\d|interest rate|% p\.?a\.?|processing fee|emi starting|no[-\s]?cost emi.*offer|credit card.*offer|limit increase|card upgrade|reward points|points expiring|cashback.*offer|missed call|give a missed call|call now|call us at|sms.*to \d{5,}|offer ends|offer expires|valid till.*offer|festive offer|dhamaka|bonanza|grab it|don't miss|dont miss|statement.*ready|e-statement|minimum due|your.*statement.*(ready|generated)|total due.*minimum/i;
 const TXN_SIGNAL_RE = /debited|credited|\bdr\.?\b|\bcr\.?\b|spent|paid|withdraw|purchase|upi|txn|transaction|neft|imps|rtgs|nach|mandate|\ba\/c\b|account|card|xx\d|x{2,}\d|balance|\bavl\b|available|statement|\bdue\b|bill|emi/i;
+// Hard proof of a real money movement (reference numbers / UPI trail /
+// balance lines). An 'unknown'-direction message needs one of these.
+const TXN_STRONG_RE = /utr|rrn|rr\s?no|ref\s?no|upi\/|imps\/|neft\/|rtgs\/|nach\/|avl\.?\s?bal|available balance|a\/c.*xx|xx\d{4}|txn\s?id|transaction\s?id/i;
 
 /**
  * Deterministic payee/sender extraction tuned for real Indian bank/UPI SMS.
@@ -205,7 +210,19 @@ function parseAmount(raw: string): number {
   return Number(raw.replace(/,/g, ''));
 }
 
+const LAKH_WORD_RE = /(?:rs\.?|inr|₹)\s?([\d,]+(?:\.\d{1,2})?)\s?(lakh|lac|lacs|crore)/i;
+
 function pickAmount(body: string): number {
+  // Indian-word amounts ("Rs 10 lakh", "Rs 2.5 crore") — scale them, and let
+  // the promo filter above kill offer messages before they become records.
+  LAKH_WORD_RE.lastIndex = 0;
+  const lw = LAKH_WORD_RE.exec(body);
+  if (lw) {
+    const base = parseAmount(lw[1]);
+    if (Number.isFinite(base) && base > 0) {
+      return base * (/crore/i.test(lw[2]) ? 10000000 : 100000);
+    }
+  }
   AMOUNT_RE.lastIndex = 0;
   const matches: { value: number; index: number }[] = [];
   let m: RegExpExecArray | null;
@@ -253,9 +270,13 @@ export function parseSmsBody(msg: SmsMessage): SpendCandidate | null {
   const direction: SpendDirection =
     hasDebit && !hasCredit ? 'debit' : !hasDebit && hasCredit ? 'credit' : hasDebit ? 'debit' : 'unknown';
   if (direction === 'unknown') {
-    // Amount without any money-movement signal (e.g. ads) -> skip.
+    // No explicit debit/credit verb: accept ONLY with hard proof of movement
+    // (UTR/RRN/UPI trail/balance line). Weak words like "loan", "due",
+    // "bill", "emi" alone are offer/bill-reminder noise -> skip.
     TXN_SIGNAL_RE.lastIndex = 0;
     if (!TXN_SIGNAL_RE.test(body)) return null;
+    TXN_STRONG_RE.lastIndex = 0;
+    if (!TXN_STRONG_RE.test(body)) return null;
   }
 
   const acc = ACCOUNT_RE.exec(body);
@@ -302,18 +323,61 @@ export function filterDebitCandidates(
 export function collectTransactionCandidates(
   messages: SmsMessage[],
   importedIds: string[]
-): { candidates: SpendCandidate[]; bodies: Map<string, string> } {
+): { candidates: SpendCandidate[]; bodies: Map<string, string>; skippedJunk: number } {
   const seen = new Set(importedIds);
   const candidates: SpendCandidate[] = [];
   const bodies = new Map<string, string>();
+  let skippedJunk = 0;
   for (const msg of messages) {
     if (seen.has(msg.id)) continue;
     const c = parseSmsBody(msg);
-    if (!c) continue;
+    if (!c) {
+      skippedJunk++;
+      continue;
+    }
     candidates.push(c);
     bodies.set(msg.id, msg.body || '');
   }
-  return { candidates, bodies };
+  return { candidates, bodies, skippedJunk };
+}
+
+/** Re-check helper shared with AI validation: promo/offer/OTP-shaped text. */
+export function looksLikePromo(body: string): boolean {
+  OTP_RE.lastIndex = 0;
+  if (OTP_RE.test(body)) return true;
+  PROMO_RE.lastIndex = 0;
+  return PROMO_RE.test(body);
+}
+
+function dedupeKey(c: SpendCandidate): string {
+  const name = (c.merchant || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 12);
+  return `${c.direction}|${c.amount}|${c.date}|${name}`;
+}
+
+/**
+ * Merge duplicates: the same real-world transaction often produces 2 SMS
+ * (bank debit alert + UPI app confirmation from different senders).
+ * Same direction + amount + date + counterparty => one row, rest merged.
+ */
+export function dedupeCandidates(
+  candidates: SpendCandidate[]
+): { unique: SpendCandidate[]; merged: number } {
+  const seen = new Map<string, SpendCandidate>();
+  let merged = 0;
+  for (const c of candidates) {
+    const k = dedupeKey(c);
+    const prev = seen.get(k);
+    if (!prev) {
+      seen.set(k, c);
+      continue;
+    }
+    merged++;
+    // Keep the richer record (prefer one with a merchant name + longer body).
+    const prevScore = (prev.merchant ? 2 : 0) + prev.body.length;
+    const curScore = (c.merchant ? 2 : 0) + c.body.length;
+    if (curScore > prevScore) seen.set(k, c);
+  }
+  return { unique: [...seen.values()], merged };
 }
 
 export function suggestExpenseTitle(c: Pick<SpendCandidate, 'merchant' | 'sender'>): string {

@@ -19,6 +19,7 @@ import {
   detectDirection,
   inferCategory,
   fallbackReason,
+  looksLikePromo,
 } from './smsImport';
 import type { ExpenseCategory } from '../types';
 
@@ -80,6 +81,10 @@ function buildFullMessagePrompt(msgs: FullMessage[]): string {
     '- Salary/NEFT credit -> "monthly salary credit". Refund/cashback -> "refund received".',
     '',
     'CATEGORY — one of: food, travel, shopping, bills, health, fun, other.',
+    '',
+    'JUNK — if a message is an offer, ad, loan pitch, reward-points nudge, OTP, or balance inquiry with NO actual money movement, output direction "ignore" for it:',
+    'MSG: Get Rs 10 lakh personal loan @10% p.a. Pre-approved! SMS LOAN to 56767. T&C apply',
+    '=> {"index":9,"direction":"ignore","name":"","reason":"loan offer ad","category":"other"}',
     '',
     'Examples:',
     'MSG: Rs.250 debited from A/c XX4821 towards V GOKUL via UPI Ref 412345678901 on 12-10-26',
@@ -150,7 +155,7 @@ function nameGroundedInSms(name: string, body: string): boolean {
 
 interface RawRow {
   index: number;
-  direction?: 'out' | 'in';
+  direction?: 'out' | 'in' | 'ignore';
   name?: string;
   reason?: string;
   category?: ExpenseCategory;
@@ -159,10 +164,11 @@ interface RawRow {
 /**
  * Validate each AI row against its source SMS and repair with deterministic
  * parsing. Guarantees: non-empty grounded name, non-empty reason, direction
- * always set, category always set.
+ * always set, category always set. Promo/junk rows are dropped and counted.
  */
-function validateAndRepair(raw: unknown[], msgs: FullMessage[]): SpendAnalysis[] {
+function validateAndRepair(raw: unknown[], msgs: FullMessage[]): { rows: SpendAnalysis[]; ignored: number } {
   const out: SpendAnalysis[] = [];
+  let ignored = 0;
   for (const m of msgs) {
     const r = (raw.find(
       (x) =>
@@ -170,6 +176,11 @@ function validateAndRepair(raw: unknown[], msgs: FullMessage[]): SpendAnalysis[]
         typeof x === 'object' &&
         Number((x as { index: unknown }).index) === m.index
     ) as Partial<RawRow> | undefined) || {};
+    // Belt and suspenders: AI-flagged junk OR deterministic promo shape => drop.
+    if (r.direction === 'ignore' || looksLikePromo(m.body)) {
+      ignored++;
+      continue;
+    }
     const detName = extractPayee(m.body) || m.sender;
     const detDir = detectDirection(m.body);
     const detCat = inferCategory(detName, m.body);
@@ -207,7 +218,7 @@ function validateAndRepair(raw: unknown[], msgs: FullMessage[]): SpendAnalysis[]
 
     out.push({ index: m.index, name, reason, direction, category, validated: grounded });
   }
-  return out;
+  return { rows: out, ignored };
 }
 
 async function callGroq(
@@ -259,15 +270,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * Chunked batched calls; every row validated + repaired deterministically.
  * Throws with a friendly message only when nothing could be analyzed at all.
  */
+export interface MessageAnalysis {
+  rows: SpendAnalysis[];
+  /** Rows dropped as promo/junk (still counted for the status line). */
+  ignored: number;
+}
+
 export async function analyzeMessages(
   msgs: FullMessage[],
   apiKey: string,
   model: string
-): Promise<SpendAnalysis[]> {
+): Promise<MessageAnalysis> {
   if (msgs.length === 0) throw new Error('nothing to analyze');
   if (!apiKey.trim()) throw new Error('Add your Groq API key in Settings first.');
   const batches = chunk(msgs, BATCH_SIZE);
   const merged: SpendAnalysis[] = [];
+  let ignored = 0;
   let lastError: unknown = null;
   for (const batch of batches) {
     try {
@@ -279,11 +297,18 @@ export async function analyzeMessages(
         2048
       );
       const raw = extractJsonArray(content);
-      merged.push(...validateAndRepair(raw, batch));
+      const checked = validateAndRepair(raw, batch);
+      merged.push(...checked.rows);
+      ignored += checked.ignored;
     } catch (e) {
       lastError = e;
-      // Offline/deterministic fallback for this batch — never leave rows blank.
+      // Offline/deterministic fallback for this batch — never leave rows blank,
+      // but still drop promo-shaped rows and count them.
       for (const m of batch) {
+        if (looksLikePromo(m.body)) {
+          ignored++;
+          continue;
+        }
         const detName = extractPayee(m.body) || m.sender;
         const detDir = detectDirection(m.body);
         const direction: 'out' | 'in' = detDir === 'unknown' ? 'out' : detDir;
@@ -300,10 +325,15 @@ export async function analyzeMessages(
   }
   if (merged.length === 0) {
     throw new Error(
-      lastError instanceof Error ? lastError.message : 'AI returned no usable rows — try again.'
+      ignored > 0
+        ? `All ${ignored} message${ignored > 1 ? 's were' : ' was'} promo/junk — nothing to import.`
+        : lastError instanceof Error
+          ? lastError.message
+          : 'AI returned no usable rows — try again.'
     );
   }
-  return merged.sort((a, b) => a.index - b.index);
+  merged.sort((a, b) => a.index - b.index);
+  return { rows: merged, ignored };
 }
 
 // ---- Fragment mode (manual "Suggest with AI", key test) ----

@@ -1,8 +1,8 @@
 # EquiNote — EMI & Loan Tracker (Android, Offline-First)
 
-> ✅ **Stable version: v3.2.0** — [download the stable APK](../../releases/tag/v3.2.0).
-> The `stable` branch and `stable` tag point to v3.2.0 (spends folders + accurate
-> AI + saved SMS per record). They never move except for a deliberate stable release.
+> ✅ **Stable version: v3.3.0** — [download the stable APK](../../releases/tag/v3.3.0).
+> The `stable` branch and `stable` tag point to v3.3.0 (spam-proof scan + CSV
+> import + salary ask). They never move except for a deliberate stable release.
 > 🧪 **Beta line: v3.1.0-beta.x** — daily spends + SMS scan, published as
 > pre-releases so Latest/stable never moves.
 
@@ -52,6 +52,22 @@ npx cap sync
 cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## v3.3.0 changelog (STABLE — spam-proof scan + CSV import + salary ask)
+
+- **Spam-proof SMS scan** — loan pitches ("Rs 10 lakh loan @10%"), card offers,
+  discount ads, reward-point nudges, OTPs, bill reminders and statement-ready
+  notes are rejected on-device (12/12 filter checks pass); messages with no
+  debit/credit verb now need hard proof (UTR/RRN/UPI trail/balance line).
+  Lakh/crore amounts scale correctly.
+- **No duplicates** — same transaction reported twice (bank alert + UPI
+  confirmation) merges into one row; the scan reports merged/filtered counts.
+  AI also flags junk with direction "ignore" and those rows are removed.
+- **Statement CSV import** — new CSV button in Daily Spends: download the
+  statement from any bank / GPay / PhonePe / Paytm app and import offline
+  (Date, Description, Amount, Type or Debit/Credit columns, deduped).
+- **Month-wise salary ask** — a card asks once per month until salary is
+  recorded (prefilled from Settings income, dismissible).
 
 ## v3.2.0 changelog (STABLE — folders + accurate AI + saved SMS)
 

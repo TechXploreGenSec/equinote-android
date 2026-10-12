@@ -8,9 +8,10 @@ import { ExpenseItem, ExpenseAccount, ExpenseCategory, ExpenseAccountKind, UserS
 import { formatCurrency } from '../utils/finance';
 import {
   isSmsSupported, ensureSmsPermission, readInboxSmsThisMonth,
-  collectTransactionCandidates, filterByUserBanks,
+  collectTransactionCandidates, filterByUserBanks, dedupeCandidates,
   suggestExpenseTitle, inferCategory,
 } from '../utils/smsImport';
+import { parseSpendsCsv, SPENDS_CSV_EXAMPLE } from '../utils/statementImport';
 import { monthRangeLabel, todayStr as todayIST, monthPrefix as monthPrefixIST } from '../utils/datetime';
 import { senderIdsForBankName } from '../utils/bankDirectory';
 import { analyzeMessages, analyzeSpends, DEFAULT_GROQ_MODEL } from '../utils/aiReason';
@@ -141,6 +142,114 @@ export default function ExpensesView({
   const [editAccountId, setEditAccountId] = useState('');
   const [editReason, setEditReason] = useState('');
   const [editDirection, setEditDirection] = useState<'out' | 'in'>('out');
+
+  // Statement CSV import (fast non-SMS tracking — bank/UPI app downloads).
+  const [isCsvOpen, setIsCsvOpen] = useState(false);
+  const [csvText, setCsvText] = useState('');
+  const [csvStatus, setCsvStatus] = useState<string | null>(null);
+
+  // Month-wise salary ask.
+  const [salaryAmount, setSalaryAmount] = useState(
+    settings.monthlyIncome ? String(settings.monthlyIncome) : ''
+  );
+  const salaryMonth = monthPrefixIST();
+  const salaryDismissKey = `equinote_salary_dismiss_${salaryMonth}`;
+  const [salaryDismissed, setSalaryDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(`equinote_salary_dismiss_${monthPrefixIST()}`) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const hasSalaryThisMonth = useMemo(
+    () =>
+      expenses.some(
+        (e) => e.date.startsWith(salaryMonth) && e.direction === 'in' && /salary/i.test(e.title)
+      ),
+    [expenses, salaryMonth]
+  );
+  const showSalaryCard = !hasSalaryThisMonth && !salaryDismissed;
+
+  const handleAddSalary = () => {
+    const amt = Number(salaryAmount);
+    if (!Number.isFinite(amt) || amt <= 0) return;
+    onSaveExpense({
+      id: `exp-sal-${Date.now()}`,
+      title: 'Salary',
+      amount: amt,
+      date: todayIST(),
+      category: 'other',
+      accountId: accounts[0]?.id || undefined,
+      reason: 'monthly salary credit',
+      direction: 'in',
+      createdAt: new Date().toISOString(),
+    });
+    setSalaryAmount('');
+  };
+
+  const dismissSalaryCard = () => {
+    try {
+      localStorage.setItem(salaryDismissKey, '1');
+    } catch {
+      /* ignore */
+    }
+    setSalaryDismissed(true);
+  };
+
+  const handleImportCsv = () => {
+    if (!csvText.trim()) {
+      setCsvStatus('Paste statement CSV text or pick a .csv file first.');
+      return;
+    }
+    const { rows, skipped: parseSkipped } = parseSpendsCsv(csvText);
+    let skipped = parseSkipped;
+    if (rows.length === 0) {
+      setCsvStatus(
+        'No usable rows — need headers like Date, Description, Amount, Type (see example below).' +
+        (skipped > 0 ? ` Skipped ${skipped}.` : '')
+      );
+      return;
+    }
+    // Skip rows already recorded (same date + amount + direction + title).
+    const existing = new Set(
+      expenses.map((e) => `${e.date}|${e.amount}|${e.direction === 'in' ? 'in' : 'out'}|${e.title.toLowerCase()}`)
+    );
+    const fresh = rows.filter((r) => {
+      const k = `${r.date}|${r.amount}|${r.direction}|${r.title.toLowerCase()}`;
+      if (existing.has(k)) {
+        skipped++;
+        return false;
+      }
+      return true;
+    });
+    if (fresh.length === 0) {
+      setCsvStatus(`All ${rows.length} rows are already recorded — nothing new to import.`);
+      return;
+    }
+    const items: ExpenseItem[] = fresh.map((r, i) => ({
+      id: `exp-csv-${Date.now()}-${i}`,
+      title: r.title,
+      amount: r.amount,
+      date: r.date,
+      category: r.category,
+      accountId: accounts[0]?.id || undefined,
+      reason: r.reason,
+      direction: r.direction,
+      createdAt: new Date().toISOString(),
+    }));
+    const ins = items.filter((x) => x.direction === 'in').length;
+    onImportSmsExpenses(items, []);
+    setCsvText('');
+    setIsCsvOpen(false);
+    setCsvStatus(null);
+    setFolder('all');
+    setSmsStatus(
+      `CSV imported ${items.length} record${items.length > 1 ? 's' : ''}` +
+      (ins > 0 ? ` (${items.length - ins} sent, ${ins} received)` : '') +
+      (skipped > 0 ? `, skipped ${skipped}` : '') +
+      '.'
+    );
+  };
 
   const toggleExpanded = (id: string) => {
     setExpandedIds((prev) => {
@@ -306,15 +415,20 @@ export default function ExpensesView({
       setSmsStatus('Reading this month’s inbox… (stays on your phone)');
       const messages = await readInboxSmsThisMonth(300);
       const { loadImportedSmsIds } = await import('../utils/storage');
-      const { candidates, bodies } = collectTransactionCandidates(messages, loadImportedSmsIds());
+      const { candidates, bodies, skippedJunk } = collectTransactionCandidates(messages, loadImportedSmsIds());
       setSmsBodies(bodies);
       const range = monthRangeLabel();
-      if (candidates.length === 0) {
-        setSmsStatus(`Scanned ${messages.length} SMS (${range}) — no new bank transactions found.`);
+      const { unique, merged } = dedupeCandidates(candidates);
+      if (unique.length === 0) {
+        setSmsStatus(
+          `Scanned ${messages.length} SMS (${range}) — no new bank transactions found` +
+          (skippedJunk > 0 ? ` (${skippedJunk} promo/OTP/info messages filtered out)` : '') +
+          '.'
+        );
         setSmsRows([]);
         return;
       }
-      const { mine, others, filtered } = filterByUserBanks(candidates, accounts);
+      const { mine, others, filtered } = filterByUserBanks(unique, accounts);
       if (mine.length === 0) {
         setSmsStatus(
           `Scanned ${messages.length} SMS (${range}), found ${candidates.length} transaction${candidates.length > 1 ? 's' : ''} — but none match your banks. Add sender IDs / last-4 digits in My accounts below.`
@@ -339,9 +453,13 @@ export default function ExpensesView({
         aiDone: false,
         userEditedTitle: false,
       })));
+      const filterBits: string[] = [];
+      if (filtered && others > 0) filterBits.push(`hid ${others} non-bank message${others > 1 ? 's' : ''}`);
+      if (skippedJunk > 0) filterBits.push(`filtered ${skippedJunk} promo/OTP/info SMS`);
+      if (merged > 0) filterBits.push(`merged ${merged} duplicate${merged > 1 ? 's' : ''} (same amount + date + party)`);
       setSmsStatus(
         `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''} (${range})` +
-        (filtered && others > 0 ? ` — hid ${others} non-bank message${others > 1 ? 's' : ''}` : '') +
+        (filterBits.length > 0 ? ` — ${filterBits.join(' · ')}` : '') +
         '. Tap “Analyze with AI” for paid-vs-received reasoning, or review and import directly.' +
         (!filtered ? ' Tip: add sender IDs in My accounts to filter only your banks.' : '')
       );
@@ -366,30 +484,38 @@ export default function ExpensesView({
     }
     setIsAiFilling(true);
     try {
-      const out = await analyzeMessages(
-        smsRows.map((r, i) => ({ index: i, sender: r.sender, date: r.date, body: r.body || smsBodies.get(r.smsId) || '' })),
+      const snapshot = smsRows;
+      const { rows: out, ignored } = await analyzeMessages(
+        snapshot.map((r, i) => ({ index: i, sender: r.sender, date: r.date, body: r.body || smsBodies.get(r.smsId) || '' })),
         groqKey,
         groqModel
       );
-      let applied = 0;
+      const keptIdx = new Set(out.map((o) => o.index));
+      const dropped = snapshot.length - keptIdx.size;
       setSmsRows((rows) =>
-        rows.map((row, i) => {
-          const hit = out.find((o) => o.index === i);
-          if (!hit) return row;
-          applied++;
-          const aiTitle = (hit.name || '').trim();
-          const keepUserTitle = row.userEditedTitle && row.title.trim().length >= 2;
-          return {
-            ...row,
-            title: keepUserTitle ? row.title : aiTitle || row.title,
-            reason: row.reason.trim() ? row.reason : hit.reason,
-            direction: hit.direction || row.direction,
-            category: hit.category || row.category,
-            aiDone: true,
-          };
-        })
+        rows
+          .map((row, i) => ({ row, i }))
+          .filter(({ i }) => keptIdx.has(i))
+          .map(({ row, i }) => {
+            const hit = out.find((o) => o.index === i);
+            if (!hit) return row;
+            const aiTitle = (hit.name || '').trim();
+            const keepUserTitle = row.userEditedTitle && row.title.trim().length >= 2;
+            return {
+              ...row,
+              title: keepUserTitle ? row.title : aiTitle || row.title,
+              reason: row.reason.trim() ? row.reason : hit.reason,
+              direction: hit.direction || row.direction,
+              category: hit.category || row.category,
+              aiDone: true,
+            };
+          })
       );
-      setSmsStatus(`AI analyzed ${out.length} message${out.length > 1 ? 's' : ''} — paid vs received, exact names, reasons, categories. Review each row (tap Original SMS to verify), then import.`);
+      setSmsStatus(
+        `AI analyzed ${out.length} message${out.length > 1 ? 's' : ''} — paid vs received, exact names, reasons, categories` +
+        (ignored > 0 || dropped > ignored ? ` (${ignored} promo/junk removed)` : '') +
+        '. Review each row (tap Original SMS to verify), then import.'
+      );
     } catch (err) {
       setSmsStatus(`AI fill failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -473,6 +599,14 @@ export default function ExpensesView({
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={() => setIsCsvOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 text-xs font-semibold transition active:scale-95"
+            title="Import bank/UPI statement CSV"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>CSV</span>
+          </button>
+          <button
             onClick={() => setIsSmsOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-xs font-semibold transition active:scale-95"
           >
@@ -521,6 +655,42 @@ export default function ExpensesView({
             {monthNet >= 0 ? '+' : ''}{formatCurrency(monthNet, settings.currencySymbol)}
           </span>
         </p>
+      )}
+
+      {/* Month-wise salary ask */}
+      {showSalaryCard && (
+        <div className="p-4 rounded-2xl bg-emerald-950/60 border border-emerald-500/30 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <h4 className="font-bold text-emerald-300 text-xs uppercase tracking-wider">
+              Salary for this month?
+            </h4>
+            <button
+              onClick={dismissSalaryCard}
+              className="p-1 rounded-lg text-slate-500 hover:text-white transition"
+              title="Dismiss for this month"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            No salary recorded yet this month. Add it once — it shows up in Received.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="number" min="1" step="any" value={salaryAmount}
+              onChange={(e) => setSalaryAmount(e.target.value)}
+              placeholder={`Amount (${settings.currencySymbol})`}
+              className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white font-mono placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+            />
+            <button
+              onClick={handleAddSalary}
+              disabled={!Number(salaryAmount) || Number(salaryAmount) <= 0}
+              className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition disabled:opacity-40"
+            >
+              Add Salary
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Separate Sent / Received folders */}
@@ -1019,6 +1189,66 @@ export default function ExpensesView({
                   Import selected as spends
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Statement CSV import modal — fast non-SMS tracking */}
+      {isCsvOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-md w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Import Statement CSV</h3>
+                <p className="text-xs text-slate-400">Bank / GPay / PhonePe / Paytm download — stays on your phone</p>
+              </div>
+              <button onClick={() => { setIsCsvOpen(false); setCsvText(''); setCsvStatus(null); }} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-5 space-y-3 text-xs">
+              <label className="w-full py-2.5 rounded-xl bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/30 text-violet-300 font-bold transition flex items-center justify-center gap-2 cursor-pointer">
+                <FolderOpen className="w-4 h-4" />
+                <span>Pick a .csv file</span>
+                <input
+                  type="file" accept=".csv,text/csv,text/plain" className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    f.text().then((t) => {
+                      setCsvText(t);
+                      setCsvStatus(`Loaded ${f.name} (${t.split(/\r?\n/).filter((l) => l.trim()).length - 1} data rows) — review, then import.`);
+                    }).catch(() => setCsvStatus('Could not read that file.'));
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <textarea
+                value={csvText} onChange={(e) => setCsvText(e.target.value)}
+                rows={6}
+                placeholder="…or paste CSV text here"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-[11px] font-mono text-white placeholder-slate-600 focus:outline-none focus:border-violet-500"
+              />
+              <details className="text-[10px] text-slate-500">
+                <summary className="cursor-pointer">Accepted format + example</summary>
+                <p className="mt-1 leading-relaxed">
+                  Headers: Date, Description (or Narration), Amount, Type (Dr/Cr) — or separate Debit/Credit columns.
+                  Dates accept 2026-10-05, 05-10-2026, 05/10/2026, 12-Oct-2026.
+                </p>
+                <pre className="mt-1 bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-300 whitespace-pre-wrap break-words">{SPENDS_CSV_EXAMPLE}</pre>
+              </details>
+              {csvStatus && (
+                <p className="text-[11px] leading-relaxed bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-300">
+                  {csvStatus}
+                </p>
+              )}
+              <button
+                onClick={handleImportCsv}
+                className="w-full py-3 rounded-2xl bg-violet-500 hover:bg-violet-400 text-slate-950 font-bold text-sm transition active:scale-98"
+              >
+                Import CSV as records
+              </button>
             </div>
           </div>
         </div>
