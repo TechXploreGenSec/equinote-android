@@ -123,5 +123,11 @@ export interface ExpenseItem {
   /** Money direction: 'out' paid, 'in' received (default 'out'). */
   direction?: 'out' | 'in';
   smsId?: string; // android inbox id, to skip re-imports
+  /** Full original bank SMS text (saved at import so it can be viewed later). */
+  smsBody?: string;
+  /** Raw SMS sender id, e.g. "JD-HDFCBK". */
+  smsSender?: string;
+  /** True when title/reason/direction came from AI analysis. */
+  aiAnalyzed?: boolean;
   createdAt: string;
 }

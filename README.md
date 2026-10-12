@@ -1,8 +1,8 @@
 # EquiNote — EMI & Loan Tracker (Android, Offline-First)
 
-> ✅ **Stable version: v3.1.0** — [download the stable APK](../../releases/tag/v3.1.0).
-> The `stable` branch and `stable` tag point to v3.1.0 (daily spends + SMS scan
-> + AI reasoning). They never move except for a deliberate stable release.
+> ✅ **Stable version: v3.2.0** — [download the stable APK](../../releases/tag/v3.2.0).
+> The `stable` branch and `stable` tag point to v3.2.0 (spends folders + accurate
+> AI + saved SMS per record). They never move except for a deliberate stable release.
 > 🧪 **Beta line: v3.1.0-beta.x** — daily spends + SMS scan, published as
 > pre-releases so Latest/stable never moves.
 
@@ -52,6 +52,22 @@ npx cap sync
 cd android && ./gradlew assembleDebug
 # APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## v3.2.0 changelog (STABLE — folders + accurate AI + saved SMS)
+
+- **Sent / Received folders** — Daily Spends now has All · Sent · Received tabs
+  with per-month counts, plus Sent-today / Sent-month / Received-month hero
+  cards and a net line. Sent amounts show rose, received show green with +.
+- **Accurate AI analysis** — few-shot prompt with real Indian SMS shapes,
+  temperature 0 + JSON mode, chunked batches, and every AI row cross-checked
+  against the SMS text: hallucinated names are replaced by the on-device
+  extraction, direction falls back to keyword detection, reasons/categories
+  never come back blank (offline fallback included). Hand-edited titles are
+  never overwritten by a later AI run.
+- **Full SMS saved per record** — imports store the whole original message;
+  every spend has the same expandable Original SMS viewer as the import step,
+  plus an AI ✓ badge and an edit pencil to fix name/reason/direction/category
+  after import. Import rows add per-row category + AI badges.
 
 ## v3.1.0 changelog (STABLE — spends + AI reasoning)
 

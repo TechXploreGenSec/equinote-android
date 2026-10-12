@@ -1,15 +1,15 @@
 import { useState, useMemo } from 'react';
 import {
-  X, Plus, Trash2, Wallet, MessageSquareText, Check, ChevronDown, Sparkles,
+  X, Plus, Trash2, Wallet, MessageSquareText, Check, ChevronDown, Sparkles, Pencil,
   UtensilsCrossed, Car, ShoppingBag, Receipt, HeartPulse, Clapperboard,
-  CircleDashed, Landmark, CreditCard, Banknote, Smartphone,
+  CircleDashed, Landmark, CreditCard, Banknote, Smartphone, ArrowUpRight, ArrowDownLeft, FolderOpen,
 } from 'lucide-react';
 import { ExpenseItem, ExpenseAccount, ExpenseCategory, ExpenseAccountKind, UserSettings } from '../types';
 import { formatCurrency } from '../utils/finance';
 import {
   isSmsSupported, ensureSmsPermission, readInboxSmsThisMonth,
   collectTransactionCandidates, filterByUserBanks,
-  suggestExpenseTitle,
+  suggestExpenseTitle, inferCategory,
 } from '../utils/smsImport';
 import { monthRangeLabel, todayStr as todayIST, monthPrefix as monthPrefixIST } from '../utils/datetime';
 import { senderIdsForBankName } from '../utils/bankDirectory';
@@ -20,6 +20,7 @@ interface ExpensesViewProps {
   accounts: ExpenseAccount[];
   settings: UserSettings;
   onSaveExpense: (expense: ExpenseItem) => void;
+  onUpdateExpense: (expense: ExpenseItem) => void;
   onDeleteExpense: (id: string) => void;
   onSaveAccount: (account: ExpenseAccount) => void;
   onDeleteAccount: (id: string) => void;
@@ -84,13 +85,21 @@ interface SmsRow {
   reason: string;
   accountId: string;
   direction: 'out' | 'in';
+  category: ExpenseCategory;
+  /** True after AI analyzed this row (shows the AI badge). */
+  aiDone: boolean;
+  /** True once the user hand-edits the title — AI will no longer overwrite it. */
+  userEditedTitle: boolean;
 }
+
+type SpendFolder = 'all' | 'out' | 'in';
 
 export default function ExpensesView({
   expenses,
   accounts,
   settings,
   onSaveExpense,
+  onUpdateExpense,
   onDeleteExpense,
   onSaveAccount,
   onDeleteAccount,
@@ -121,22 +130,86 @@ export default function ExpensesView({
   const [isAiFilling, setIsAiFilling] = useState(false);
   const [isAiSuggesting, setIsAiSuggesting] = useState(false);
 
+  // Separate Sent / Received folders + per-record SMS viewer + edit flow.
+  const [folder, setFolder] = useState<SpendFolder>('all');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<ExpenseItem | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editCategory, setEditCategory] = useState<ExpenseCategory>('other');
+  const [editAccountId, setEditAccountId] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [editDirection, setEditDirection] = useState<'out' | 'in'>('out');
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const openEdit = (e: ExpenseItem) => {
+    setEditing(e);
+    setEditTitle(e.title);
+    setEditAmount(String(e.amount));
+    setEditDate(e.date);
+    setEditCategory(e.category);
+    setEditAccountId(e.accountId || '');
+    setEditReason(e.reason);
+    setEditDirection(e.direction === 'in' ? 'in' : 'out');
+  };
+
+  const handleSubmitEdit = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!editing) return;
+    const amt = Number(editAmount);
+    if (!editTitle.trim() || !Number.isFinite(amt) || amt <= 0 || !editDate) return;
+    if (editReason.trim().length < 2) return;
+    onUpdateExpense({
+      ...editing,
+      title: editTitle.trim(),
+      amount: amt,
+      date: editDate,
+      category: editCategory,
+      accountId: editAccountId || undefined,
+      reason: editReason.trim(),
+      direction: editDirection,
+    });
+    setEditing(null);
+  };
+
   const monthPrefix = monthPrefixIST();
 
-  const { todayTotal, monthTotal, monthInTotal } = useMemo(() => {
+  const { todayOut, monthOut, monthIn, monthNet } = useMemo(() => {
     const t = todayIST();
     let today = 0;
-    let month = 0;
-    let monthIn = 0;
+    let monthO = 0;
+    let monthI = 0;
     for (const e of expenses) {
       const isIn = e.direction === 'in';
       if (e.date === t && !isIn) today += e.amount;
       if (e.date.startsWith(monthPrefix)) {
-        if (isIn) monthIn += e.amount;
-        else month += e.amount;
+        if (isIn) monthI += e.amount;
+        else monthO += e.amount;
       }
     }
-    return { todayTotal: today, monthTotal: month, monthInTotal: monthIn };
+    return { todayOut: today, monthOut: monthO, monthIn: monthI, monthNet: monthI - monthO };
+  }, [expenses, monthPrefix]);
+
+  const folderCounts = useMemo(() => {
+    let out = 0;
+    let inn = 0;
+    let outTotal = 0;
+    let inTotal = 0;
+    for (const e of expenses) {
+      if (!e.date.startsWith(monthPrefix)) continue;
+      if (e.direction === 'in') { inn++; inTotal += e.amount; }
+      else { out++; outTotal += e.amount; }
+    }
+    return { all: out + inn, out, in: inn, outTotal, inTotal };
   }, [expenses, monthPrefix]);
 
   const categoryTotals = useMemo(() => {
@@ -162,12 +235,15 @@ export default function ExpensesView({
 
   const grouped = useMemo(() => {
     const map = new Map<string, ExpenseItem[]>();
-    for (const e of [...expenses].sort((a, b) => b.date.localeCompare(a.date))) {
+    const list = [...expenses]
+      .filter((e) => folder === 'all' || (e.direction === 'in' ? 'in' : 'out') === folder)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    for (const e of list) {
       if (!map.has(e.date)) map.set(e.date, []);
       map.get(e.date)!.push(e);
     }
     return [...map.entries()];
-  }, [expenses]);
+  }, [expenses, folder]);
 
   const accountName = (id?: string) => accounts.find((a) => a.id === id)?.name || '—';
 
@@ -250,14 +326,18 @@ export default function ExpensesView({
         smsId: d.smsId,
         amount: d.amount,
         accountLast4: d.accountLast4,
+        merchant: d.merchant,
         sender: d.sender,
         date: d.date,
-        body: bodies.get(d.smsId) || '',
+        body: bodies.get(d.smsId) || d.body || '',
         selected: true,
         title: suggestExpenseTitle(d),
         reason: '',
         accountId: accountId || accounts[0]?.id || '',
         direction: d.direction === 'credit' ? 'in' as const : 'out' as const,
+        category: inferCategory(d.merchant, bodies.get(d.smsId) || d.body || ''),
+        aiDone: false,
+        userEditedTitle: false,
       })));
       setSmsStatus(
         `Showing ${mine.length} from your bank${mine.length > 1 ? 's' : ''} (${range})` +
@@ -276,7 +356,8 @@ export default function ExpensesView({
   const groqModel = settings.groqModel || DEFAULT_GROQ_MODEL;
 
   // One batched AI call over the FULL matched messages: decides paid-to
-  // vs received-from, exact name, and reason. Explicit tap only.
+  // vs received-from, exact name, reason + category. Explicit tap only.
+  // Results are validated against the SMS on-device; hand-edited titles win.
   const handleAiFillReasons = async () => {
     if (smsRows.length === 0) return;
     if (!groqKey.trim()) {
@@ -290,19 +371,25 @@ export default function ExpensesView({
         groqKey,
         groqModel
       );
+      let applied = 0;
       setSmsRows((rows) =>
         rows.map((row, i) => {
           const hit = out.find((o) => o.index === i);
           if (!hit) return row;
+          applied++;
+          const aiTitle = (hit.name || '').trim();
+          const keepUserTitle = row.userEditedTitle && row.title.trim().length >= 2;
           return {
             ...row,
-            title: row.title.trim() && row.title !== suggestExpenseTitle(row) ? row.title : hit.name,
+            title: keepUserTitle ? row.title : aiTitle || row.title,
             reason: row.reason.trim() ? row.reason : hit.reason,
             direction: hit.direction || row.direction,
+            category: hit.category || row.category,
+            aiDone: true,
           };
         })
       );
-      setSmsStatus(`AI analyzed ${out.length} message${out.length > 1 ? 's' : ''} — paid vs received, names, reasons. Review, then import.`);
+      setSmsStatus(`AI analyzed ${out.length} message${out.length > 1 ? 's' : ''} — paid vs received, exact names, reasons, categories. Review each row (tap Original SMS to verify), then import.`);
     } catch (err) {
       setSmsStatus(`AI fill failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -347,16 +434,21 @@ export default function ExpensesView({
     }
     // Bulk month import: reason is optional — fall back to the SMS source
     // so history imports never get blocked. Manual adds still require it.
+    // The FULL original message is saved on each record so it can be
+    // re-opened later from the spends list (same viewer as the import step).
     const items: ExpenseItem[] = chosen.map((r) => ({
       id: `exp-${Date.now()}-${r.smsId}`,
       title: r.title.trim() || suggestExpenseTitle(r),
       amount: r.amount,
       date: r.date,
-      category: 'other' as ExpenseCategory,
+      category: r.category,
       accountId: r.accountId || undefined,
       reason: r.reason.trim() || `From SMS (${r.sender})`,
       direction: r.direction,
       smsId: r.smsId,
+      smsBody: r.body || smsBodies.get(r.smsId) || undefined,
+      smsSender: r.sender || undefined,
+      aiAnalyzed: r.aiDone || undefined,
       createdAt: new Date().toISOString(),
     }));
     onImportSmsExpenses(items, chosen.map((r) => r.smsId));
@@ -377,7 +469,7 @@ export default function ExpensesView({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-extrabold text-white tracking-tight">Daily Spends</h2>
-          <p className="text-xs text-slate-400">Every rupee out, with a reason attached</p>
+          <p className="text-xs text-slate-400">Sent & received, every rupee with a reason</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -397,25 +489,66 @@ export default function ExpensesView({
         </div>
       </div>
 
-      {/* Totals hero */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800/90">
-          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Spent today</span>
-          <div className="text-xl font-extrabold text-white mt-1 font-mono">
-            {formatCurrency(todayTotal, settings.currencySymbol)}
+      {/* Totals hero: today out + month sent/received/net */}
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800/90">
+          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Sent today</span>
+          <div className="text-lg font-extrabold text-white mt-1 font-mono">
+            {formatCurrency(todayOut, settings.currencySymbol)}
           </div>
         </div>
-        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800/90">
-          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Spent this month</span>
-          <div className="text-xl font-extrabold text-amber-300 mt-1 font-mono">
-            {formatCurrency(monthTotal, settings.currencySymbol)}
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-rose-500/25">
+          <span className="text-[10px] text-rose-300/80 uppercase tracking-wider font-semibold flex items-center gap-1">
+            <ArrowUpRight className="w-3 h-3" /> Sent · month
+          </span>
+          <div className="text-lg font-extrabold text-rose-300 mt-1 font-mono">
+            {formatCurrency(monthOut, settings.currencySymbol)}
           </div>
-          {monthInTotal > 0 && (
-            <span className="text-[10px] text-emerald-400 mt-0.5 block">
-              +{formatCurrency(monthInTotal, settings.currencySymbol)} received
-            </span>
-          )}
         </div>
+        <div className="p-3.5 rounded-2xl bg-slate-900 border border-emerald-500/25">
+          <span className="text-[10px] text-emerald-300/80 uppercase tracking-wider font-semibold flex items-center gap-1">
+            <ArrowDownLeft className="w-3 h-3" /> Got · month
+          </span>
+          <div className="text-lg font-extrabold text-emerald-300 mt-1 font-mono">
+            {formatCurrency(monthIn, settings.currencySymbol)}
+          </div>
+        </div>
+      </div>
+      {(monthOut > 0 || monthIn > 0) && (
+        <p className="text-[11px] text-slate-400 px-1 -mt-1">
+          Net this month:{' '}
+          <span className={`font-bold font-mono ${monthNet >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {monthNet >= 0 ? '+' : ''}{formatCurrency(monthNet, settings.currencySymbol)}
+          </span>
+        </p>
+      )}
+
+      {/* Separate Sent / Received folders */}
+      <div className="p-1.5 rounded-2xl bg-slate-900 border border-slate-800/90 grid grid-cols-3 gap-1.5">
+        {([
+          { key: 'all', label: 'All', count: folderCounts.all },
+          { key: 'out', label: 'Sent', count: folderCounts.out },
+          { key: 'in', label: 'Received', count: folderCounts.in },
+        ] as { key: SpendFolder; label: string; count: number }[]).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setFolder(t.key)}
+            className={`py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              folder === t.key
+                ? t.key === 'in'
+                  ? 'bg-emerald-500/20 border border-emerald-500 text-white'
+                  : t.key === 'out'
+                    ? 'bg-rose-500/20 border border-rose-500 text-white'
+                    : 'bg-slate-700 border border-slate-600 text-white'
+                : 'bg-transparent border border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span>{t.label}</span>
+            <span className="text-[10px] font-mono opacity-80">({t.count})</span>
+          </button>
+        ))}
       </div>
 
       {/* Category breakdown */}
@@ -558,11 +691,15 @@ export default function ExpensesView({
         )}
       </div>
 
-      {/* Expense list */}
+      {/* Expense list (filtered by Sent / Received folder) */}
       <div className="space-y-3">
         {grouped.length === 0 ? (
           <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-2xl text-xs text-slate-400">
-            No spends recorded yet. Add one manually or scan your bank SMS.
+            {folder === 'all'
+              ? 'No spends recorded yet. Add one manually or scan your bank SMS.'
+              : folder === 'out'
+                ? 'No sent records this month — switch to All or scan SMS.'
+                : 'No received records this month — switch to All or scan SMS.'}
           </div>
         ) : (
           grouped.map(([day, items]) => (
@@ -570,40 +707,70 @@ export default function ExpensesView({
               <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider px-1">{day}</div>
               {items.map((e) => {
                 const Icon = categoryIcon(e.category);
+                const isIn = e.direction === 'in';
+                const expanded = expandedIds.has(e.id);
                 return (
-                  <div key={e.id} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800/90 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
-                        <Icon className="w-4 h-4 text-slate-300" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <div className="text-xs font-bold text-white truncate">{e.title}</div>
-                          {e.direction === 'in' && (
-                            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded shrink-0">
-                              Received
+                  <div key={e.id} className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800/90 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                          <Icon className="w-4 h-4 text-slate-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <div className="text-xs font-bold text-white truncate">{e.title}</div>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${isIn ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
+                              {isIn ? 'Received' : 'Sent'}
                             </span>
-                          )}
+                            {e.aiAnalyzed && (
+                              <span className="text-[10px] font-semibold text-violet-300 bg-violet-500/10 px-1.5 py-0.5 rounded shrink-0">
+                                AI ✓
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-amber-300/90 mt-0.5 truncate">Why: {e.reason}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {EXPENSE_CATEGORIES[e.category].label} · {accountName(e.accountId)}
+                            {e.smsId ? ' · via SMS' : ''}
+                            {e.smsSender ? ` · ${e.smsSender}` : ''}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-amber-300/90 mt-0.5 truncate">Why: {e.reason}</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {EXPENSE_CATEGORIES[e.category].label} · {accountName(e.accountId)}
-                          {e.smsId ? ' · via SMS' : ''}
+                      </div>
+                      <div className="text-right shrink-0 flex items-center gap-1.5">
+                        <div className={`font-extrabold text-sm font-mono ${isIn ? 'text-emerald-300' : 'text-white'}`}>
+                          {isIn ? '+' : ''}{formatCurrency(e.amount, settings.currencySymbol)}
                         </div>
+                        <button
+                          onClick={() => openEdit(e)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-sky-400 transition"
+                          title="Edit record"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => { if (window.confirm('Delete this record?')) onDeleteExpense(e.id); }}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 transition"
+                          title="Delete record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
-                    <div className="text-right shrink-0 flex items-center gap-2">
-                      <div className="font-extrabold text-sm text-white font-mono">
-                        {formatCurrency(e.amount, settings.currencySymbol)}
-                      </div>
-                      <button
-                        onClick={() => { if (window.confirm('Delete this spend?')) onDeleteExpense(e.id); }}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 transition"
-                        title="Delete spend"
+                    {/* Whole original message — same viewer as the import step */}
+                    {e.smsBody && (
+                      <details
+                        className="text-[10px] text-slate-500"
+                        open={expanded}
+                        onToggle={() => toggleExpanded(e.id)}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                        <summary className="cursor-pointer flex items-center gap-1 hover:text-slate-300">
+                          <ChevronDown className="w-3 h-3" /> Original SMS
+                        </summary>
+                        <p className="mt-1 leading-relaxed bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-300 whitespace-pre-wrap break-words">
+                          {e.smsBody}
+                        </p>
+                      </details>
+                    )}
                   </div>
                 );
               })}
@@ -759,8 +926,8 @@ export default function ExpensesView({
                   </button>
                   <p className="text-[10px] text-slate-500 leading-relaxed">
                     {groqKey.trim()
-                      ? 'AI reads the matched bank messages only, on your tap — decides paid-to vs received-from, exact name and reason.'
-                      : 'Without a key, rows use on-device parsing (debits shown, direction editable below).'}
+                      ? 'AI reads the matched bank messages only, on your tap — paid vs received, exact name, reason + category. Every result is cross-checked against the SMS text; tap Original SMS on any row to verify.'
+                      : 'Without a key, rows use on-device parsing (direction editable below).'}
                   </p>
                 </>
               )}
@@ -780,6 +947,11 @@ export default function ExpensesView({
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${r.direction === 'in' ? 'text-emerald-400 bg-emerald-500/10' : 'text-rose-400 bg-rose-500/10'}`}>
                         {r.direction === 'in' ? 'Received' : 'Paid out'}
                       </span>
+                      {r.aiDone && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 text-violet-300 bg-violet-500/10">
+                          AI ✓
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400 truncate">
                         {r.date}{r.accountLast4 ? ` · ·${r.accountLast4}` : ''} · <span className="font-mono text-sky-400/90">{r.sender}</span>
                       </span>
@@ -787,45 +959,54 @@ export default function ExpensesView({
                   </div>
                   <input
                     type="text" value={r.title}
-                    onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
-                    placeholder="Title"
+                    onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, title: e.target.value, userEditedTitle: true } : x))}
+                    placeholder="Name — exact payee/sender as in SMS"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                   />
                   <input
                     type="text" value={r.reason}
                     onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, reason: e.target.value } : x))}
-                    placeholder="Reason (optional for past imports)"
+                    placeholder="Reason — e.g. upi transfer to person, food delivery order"
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
                   />
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="grid grid-cols-2 gap-1 col-span-1">
-                      <button
-                        type="button"
-                        onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'out' as const } : x))}
-                        className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'out' ? 'bg-rose-500/20 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
-                      >
-                        Out
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'in' as const } : x))}
-                        className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'in' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
-                      >
-                        In
-                      </button>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={r.category}
+                      onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, category: e.target.value as ExpenseCategory } : x))}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {(Object.keys(EXPENSE_CATEGORIES) as ExpenseCategory[]).map((c) => (
+                        <option key={c} value={c}>{EXPENSE_CATEGORIES[c].label}</option>
+                      ))}
+                    </select>
                     <select
                       value={r.accountId}
                       onChange={(e) => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, accountId: e.target.value } : x))}
-                      className="bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500 col-span-2"
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
                     >
                       <option value="">No account</option>
                       {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                     </select>
                   </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'out' as const } : x))}
+                      className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'out' ? 'bg-rose-500/20 border-rose-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                    >
+                      Out · Sent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSmsRows((rows) => rows.map((x, j) => j === i ? { ...x, direction: 'in' as const } : x))}
+                      className={`py-1.5 rounded-xl border text-[11px] font-bold transition ${r.direction === 'in' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
+                    >
+                      In · Received
+                    </button>
+                  </div>
                   <details className="text-[10px] text-slate-500">
                     <summary className="cursor-pointer flex items-center gap-1"><ChevronDown className="w-3 h-3" /> Original SMS</summary>
-                    <p className="mt-1 leading-relaxed">{r.body}</p>
+                    <p className="mt-1 leading-relaxed bg-slate-900 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-300 whitespace-pre-wrap break-words">{r.body}</p>
                   </details>
                 </div>
               ))}
@@ -839,6 +1020,95 @@ export default function ExpensesView({
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit record modal — fix AI names/reasons after import */}
+      {editing && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl max-w-md w-full shadow-2xl overflow-hidden">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Edit Record</h3>
+                <p className="text-xs text-slate-400">Correct the name, reason, direction or category</p>
+              </div>
+              <button onClick={() => setEditing(null)} className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitEdit} className="p-5 space-y-3.5 text-xs text-slate-300">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button" onClick={() => setEditDirection('out')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${editDirection === 'out' ? 'bg-rose-500/20 border-rose-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
+                >
+                  Sent
+                </button>
+                <button
+                  type="button" onClick={() => setEditDirection('in')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition ${editDirection === 'in' ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-400'}`}
+                >
+                  Received
+                </button>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Name *</label>
+                <input type="text" required value={editTitle} onChange={(e) => setEditTitle(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Amount ({settings.currencySymbol}) *</label>
+                  <input type="number" required min="1" step="any" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Date *</label>
+                  <input type="date" required value={editDate} onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Category</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {(Object.keys(EXPENSE_CATEGORIES) as ExpenseCategory[]).map((c) => {
+                    const Icon = categoryIcon(c);
+                    return (
+                      <button key={c} type="button" onClick={() => setEditCategory(c)}
+                        className={`p-2 rounded-xl border flex flex-col items-center gap-1 transition ${
+                          editCategory === c ? 'bg-emerald-500/20 border-emerald-500 text-white' : 'bg-slate-950/60 border-slate-800 text-slate-400'
+                        }`}>
+                        <Icon className="w-4 h-4" />
+                        <span className="text-[9px] leading-tight">{EXPENSE_CATEGORIES[c].label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Account</label>
+                <select value={editAccountId} onChange={(e) => setEditAccountId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                  <option value="">No account</option>
+                  {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Reason *</label>
+                <input type="text" required minLength={2} value={editReason} onChange={(e) => setEditReason(e.target.value)}
+                  className="w-full bg-slate-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              {editing.smsBody && (
+                <details className="text-[10px] text-slate-500">
+                  <summary className="cursor-pointer flex items-center gap-1"><ChevronDown className="w-3 h-3" /> Original SMS</summary>
+                  <p className="mt-1 leading-relaxed bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-2 text-slate-300 whitespace-pre-wrap break-words">{editing.smsBody}</p>
+                </details>
+              )}
+              <button type="submit" className="w-full py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition active:scale-98">
+                Save Changes
+              </button>
+            </form>
           </div>
         </div>
       )}

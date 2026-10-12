@@ -304,6 +304,13 @@ export default function App() {
     saveExpenses(updated);
   };
 
+  const handleUpdateExpense = (expense: ExpenseItem) => {
+    const updated = expenses.map((e) => (e.id === expense.id ? expense : e));
+    setExpenses(updated);
+    saveExpenses(updated);
+    playChimeSound('pop');
+  };
+
   const handleSaveAccount = (account: ExpenseAccount) => {
     const updated = [account, ...accounts];
     setAccounts(updated);
@@ -466,6 +473,7 @@ export default function App() {
             accounts={accounts}
             settings={settings}
             onSaveExpense={handleSaveExpense}
+            onUpdateExpense={handleUpdateExpense}
             onDeleteExpense={handleDeleteExpense}
             onSaveAccount={handleSaveAccount}
             onDeleteAccount={handleDeleteAccount}

@@ -1,7 +1,7 @@
 {
   "name": "equinote-android",
   "private": true,
-  "version": "3.1.0",
+  "version": "3.2.0",
   "type": "module",
   "description": "EquiNote - Offline-first EMI & Loan Tracker (Android wrapper via Capacitor)",
   "scripts": {
